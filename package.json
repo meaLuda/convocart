@@ -1,0 +1,22 @@
+{
+  "name": "whatsapp-order-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp Order Bot with FastAPI and Tailwind CSS",
+  "scripts": {
+    "build": "tailwindcss -i ./app/static/css/input.css -o ./app/static/css/output.css --minify",
+    "watch": "tailwindcss -i ./app/static/css/input.css -o ./app/static/css/output.css --watch"
+  },
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "tailwind",
+    "fastapi"
+  ],
+  "author": "",
+  "dependencies": {
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.4.0",
+    "@tailwindcss/forms": "^0.5.7"
+  }
+}

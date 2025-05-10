@@ -1,0 +1,126 @@
+<!-- app/templates/orders.html -->
+{% extends "base.html" %}
+
+{% block title %}Manage Orders | WhatsApp Order Bot{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow-md p-6 mb-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Orders</h1>
+        
+        <div class="flex space-x-2">
+            <a href="/admin/orders" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 {% if not status_filter %}font-bold{% endif %}">
+                All
+            </a>
+            <a href="/admin/orders?status=pending" class="px-3 py-1 bg-yellow-100 rounded hover:bg-yellow-200 {% if status_filter == 'pending' %}font-bold{% endif %}">
+                Pending
+            </a>
+            <a href="/admin/orders?status=processing" class="px-3 py-1 bg-blue-100 rounded hover:bg-blue-200 {% if status_filter == 'processing' %}font-bold{% endif %}">
+                Processing
+            </a>
+            <a href="/admin/orders?status=completed" class="px-3 py-1 bg-green-100 rounded hover:bg-green-200 {% if status_filter == 'completed' %}font-bold{% endif %}">
+                Completed
+            </a>
+            <a href="/admin/orders?status=cancelled" class="px-3 py-1 bg-red-100 rounded hover:bg-red-200 {% if status_filter == 'cancelled' %}font-bold{% endif %}">
+                Cancelled
+            </a>
+        </div>
+    </div>
+    
+    {% if orders %}
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse">
+            <thead>
+                <tr class="bg-gray-100">
+                    <th class="border p-2 text-left">ID</th>
+                    <th class="border p-2 text-left">Customer</th>
+                    <th class="border p-2 text-left">Details</th>
+                    <th class="border p-2 text-left">Status</th>
+                    <th class="border p-2 text-left">Amount</th>
+                    <th class="border p-2 text-left">Created</th>
+                    <th class="border p-2 text-left">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for order in orders %}
+                <tr class="hover:bg-gray-50">
+                    <td class="border p-2">{{ order.id }}</td>
+                    <td class="border p-2">
+                        {% if order.id in customer_info %}
+                            {{ customer_info[order.id].name }}<br>
+                            <span class="text-xs text-gray-600">{{ customer_info[order.id].phone_number }}</span>
+                        {% else %}
+                            Customer #{{ order.customer_id }}
+                        {% endif %}
+                    </td>
+                    <td class="border p-2">{{ order.order_details[:50] }}{% if order.order_details|length > 50 %}...{% endif %}</td>
+                    <td class="border p-2">
+                        <span class="px-2 py-1 rounded-full text-xs 
+                            {% if order.status == 'pending' %}bg-yellow-100 text-yellow-800
+                            {% elif order.status == 'processing' %}bg-blue-100 text-blue-800
+                            {% elif order.status == 'completed' %}bg-green-100 text-green-800
+                            {% elif order.status == 'cancelled' %}bg-red-100 text-red-800
+                            {% endif %}">
+                            {{ order.status }}
+                        </span>
+                    </td>
+                    <td class="border p-2">${{ "%.2f"|format(order.total_amount) }}</td>
+                    <td class="border p-2">{{ order.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td class="border p-2">
+                        <form method="POST" action="/admin/orders/{{ order.id }}/status" class="flex flex-col space-y-2">
+                            <div class="flex space-x-1">
+                                <select name="status" class="text-sm border rounded px-2 py-1">
+                                    <option value="pending" {% if order.status == 'pending' %}selected{% endif %}>Pending</option>
+                                    <option value="processing" {% if order.status == 'processing' %}selected{% endif %}>Processing</option>
+                                    <option value="completed" {% if order.status == 'completed' %}selected{% endif %}>Completed</option>
+                                    <option value="cancelled" {% if order.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                                </select>
+                                <button type="submit" class="bg-blue-600 text-white px-2 py-1 rounded text-sm hover:bg-blue-700">
+                                    Update
+                                </button>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="checkbox" name="notify_customer" id="notify_{{ order.id }}" value="True" class="mr-2">
+                                <label for="notify_{{ order.id }}" class="text-xs">Notify customer</label>
+                            </div>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="flex justify-between items-center mt-6">
+        <div>
+            Showing page {{ current_page }} of {{ total_pages }}
+            ({{ total_orders }} total orders)
+        </div>
+        
+        <div class="flex space-x-2">
+            {% if current_page > 1 %}
+            <a href="/admin/orders?page={{ current_page - 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}" 
+               class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+                Previous
+            </a>
+            {% endif %}
+            
+            {% if current_page < total_pages %}
+            <a href="/admin/orders?page={{ current_page + 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}" 
+               class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+                Next
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {% else %}
+    <div class="text-center py-8">
+        <p class="text-gray-500 italic">No orders found.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

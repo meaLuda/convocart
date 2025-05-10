@@ -1,0 +1,152 @@
+<!-- app/templates/groups.html -->
+{% extends "base.html" %}
+
+{% block title %}Manage Groups | WhatsApp Order Bot{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow-md p-6 mb-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Groups</h1>
+        
+        <div class="flex space-x-2">
+            <a href="/admin/groups/new" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                Add New Group
+            </a>
+            <a href="/admin/groups/link-generator" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+                Generate Links
+            </a>
+        </div>
+    </div>
+    
+    {% if categories %}
+    <div class="mb-6">
+        <div class="flex space-x-2 flex-wrap">
+            <a href="/admin/groups" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 {% if not category_filter %}font-bold{% endif %} mb-2">
+                All Categories
+            </a>
+            {% for cat in categories %}
+            <a href="/admin/groups?category={{ cat }}" class="px-3 py-1 bg-blue-100 rounded hover:bg-blue-200 {% if category_filter == cat %}font-bold{% endif %} mb-2">
+                {{ cat }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if groups %}
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse">
+            <thead>
+                <tr class="bg-gray-100">
+                    <th class="border p-2 text-left">ID</th>
+                    <th class="border p-2 text-left">Name</th>
+                    <th class="border p-2 text-left">Identifier</th>
+                    <th class="border p-2 text-left">Category</th>
+                    <th class="border p-2 text-left">Status</th>
+                    <th class="border p-2 text-left">WhatsApp Link</th>
+                    <th class="border p-2 text-left">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for group in groups %}
+                <tr class="hover:bg-gray-50">
+                    <td class="border p-2">{{ group.id }}</td>
+                    <td class="border p-2">{{ group.name }}</td>
+                    <td class="border p-2">{{ group.identifier }}</td>
+                    <td class="border p-2">{{ group.category or '-' }}</td>
+                    <td class="border p-2">
+                        <span class="px-2 py-1 rounded-full text-xs 
+                            {% if group.is_active %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                            {{ "Active" if group.is_active else "Inactive" }}
+                        </span>
+                    </td>
+                    <td class="border p-2">
+                        {% if whatsapp_phone and group.identifier %}
+                        <div class="flex items-center">
+                            <input type="text" 
+                                   readonly 
+                                   value="https://wa.me/{{ whatsapp_phone }}?text=order%20from%20group%3A{{ group.identifier }}" 
+                                   id="link-{{ group.id }}"
+                                   class="text-xs px-2 py-1 border rounded mr-1 flex-grow overflow-hidden"
+                                   onclick="this.select()">
+                            <button 
+                                onclick="copyToClipboard('link-{{ group.id }}')" 
+                                class="bg-gray-200 hover:bg-gray-300 px-2 py-1 rounded text-xs">
+                                Copy
+                            </button>
+                        </div>
+                        {% else %}
+                        <span class="text-xs text-gray-600">Phone or identifier missing</span>
+                        {% endif %}
+                    </td>
+                    <td class="border p-2">
+                        <div class="flex space-x-1">
+                            <a href="/admin/groups/{{ group.id }}/edit" class="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700">
+                                Edit
+                            </a>
+                            <form method="POST" action="/admin/groups/{{ group.id }}/delete" onsubmit="return confirm('Are you sure you want to delete this group?');">
+                                <button type="submit" class="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700">
+                                    Delete
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="flex justify-between items-center mt-6">
+        <div>
+            Showing page {{ current_page }} of {{ total_pages }}
+            ({{ total_groups }} total groups)
+        </div>
+        
+        <div class="flex space-x-2">
+            {% if current_page > 1 %}
+            <a href="/admin/groups?page={{ current_page - 1 }}{% if category_filter %}&category={{ category_filter }}{% endif %}" 
+               class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+                Previous
+            </a>
+            {% endif %}
+            
+            {% if current_page < total_pages %}
+            <a href="/admin/groups?page={{ current_page + 1 }}{% if category_filter %}&category={{ category_filter }}{% endif %}" 
+               class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+                Next
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {% else %}
+    <div class="text-center py-8">
+        <p class="text-gray-500 italic">No groups found.</p>
+        <a href="/admin/groups/new" class="mt-4 inline-block px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+            Create Your First Group
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+{% block scripts %}
+<script>
+function copyToClipboard(elementId) {
+    const element = document.getElementById(elementId);
+    element.select();
+    document.execCommand('copy');
+    
+    // Optional: Show a brief "Copied!" message
+    const originalValue = element.value;
+    element.value = "Copied!";
+    setTimeout(() => {
+        element.value = originalValue;
+    }, 1000);
+}
+</script>
+{% endblock %}
+{% endblock %}
