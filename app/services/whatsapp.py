@@ -111,19 +111,22 @@ class WhatsAppService:
             # Just use the raw text if not in expected format
             items_text = str(items)
         
-        confirmation_text = f"📝 *ORDER CONFIRMATION*\n"
+        confirmation_text = f"📝 *ORDER SAVED*\n"
         confirmation_text += f"Order #: {order_details.get('order_number', 'N/A')}\n\n"
         confirmation_text += f"*Items:*\n{items_text}\n"
         
         if 'total_amount' in order_details:
-            confirmation_text += f"*Total:* ${order_details.get('total_amount', 0):.2f}\n\n"
+            # Only show total amount if it's greater than 0
+            if order_details['total_amount'] > 0:
+                confirmation_text += f"*Total:* ${order_details.get('total_amount', 0):.2f}\n\n"
             
         confirmation_text += "Thank you for your order! 🙏\n"
-        confirmation_text += "What would you like to do next?"
+        confirmation_text += "Your group admin will confirm your order and update you shortly.\n\n"
+        confirmation_text += "For payment please confirm the following.\n\n"
         
         # Add payment options buttons
         buttons = [
-            {"id": "pay_mpesa", "title": "Pay with M-Pesa"},
+            {"id": "mpesa_message", "title": "Paid with M-Pesa"},
             {"id": "pay_cash", "title": "Pay on Delivery"},
             {"id": "cancel_order", "title": "Cancel Order"}
         ]
@@ -139,10 +142,12 @@ class WhatsAppService:
         payment_ref = payment_details.get('payment_ref', 'N/A')
         
         if payment_method == 'mpesa':
-            message = f"✅ *PAYMENT CONFIRMED*\n\n"
+            message = f"✅ *PAYMENT INFORMATION SAVED*\n\n"
             message += f"Order #: {order_number}\n"
             message += f"Payment Method: M-Pesa\n"
             message += f"Transaction Code: {payment_ref}\n\n"
+            # payment pending confirmation
+            message += "Your payment is pending confirmation. Please wait for your group admin to confirm.\n\n"
             message += "Your order has been received and is being processed. Thank you!"
         else:  # cash on delivery
             message = f"✅ *ORDER CONFIRMED*\n\n"

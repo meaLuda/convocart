@@ -62,8 +62,8 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
         message = event_data.get("message", "").strip()
         message_type = event_data.get("type")
         
-        # Try to determine which group this customer belongs to
-        group_id = None
+        # Extract current group context
+        current_group_id = None
         
         # Check if this is the initial click-to-chat message which contains the group info
         if message_type == "text" and message.startswith("order from group:"):
@@ -76,23 +76,25 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
             ).first()
             
             if group:
-                group_id = group.id
+                current_group_id = group.id
                 
                 # If customer doesn't exist yet, create them
                 if not customer:
                     customer = models.Customer(
                         phone_number=phone_number,
                         name=event_data.get("name", "New Customer"),
-                        group_id=group_id
+                        group_id=current_group_id,
+                        active_group_id=current_group_id  # Set active group to current group
                     )
                     db.add(customer)
                     db.commit()
                     db.refresh(customer)
                     logger.info(f"Created new customer with ID {customer.id} for phone {phone_number}")
                 else:
-                    # If customer exists but has no group_id or belongs to a different group
-                    # We don't change their group - they might be ordering from multiple groups
-                    logger.info(f"Customer already exists with ID {customer.id}")
+                    # If customer exists, update their active_group_id
+                    customer.active_group_id = current_group_id
+                    db.commit()
+                    logger.info(f"Updated customer {customer.id} with active_group_id {current_group_id}")
         
         # If we still don't have a customer record, we can't proceed
         if not customer:
@@ -105,14 +107,15 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
             return {"success": True, "message": "Sent help message to new customer"}
         
         # Now handle the customer's message appropriately
-        await handle_customer_message(customer, event_data, db)
+        await handle_customer_message(customer, event_data, db, current_group_id)
         
         return {"success": True, "message": "Webhook processed successfully"}
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}")
         return {"success": False, "error": str(e)}
+    
 
-async def handle_customer_message(customer, event_data, db):
+async def handle_customer_message(customer, event_data, db, current_group_id=None):
     """
     Process the customer message and respond accordingly
     """
@@ -120,8 +123,16 @@ async def handle_customer_message(customer, event_data, db):
     message = event_data.get("message", "").strip()
     message_type = event_data.get("type")
     
-    # Get the customer's group for context
-    group = db.query(models.Group).filter(models.Group.id == customer.group_id).first()
+    # Prioritize explicitly provided group_id, then active_group_id, then default group_id
+    # This ensures we're always using the correct context
+    group_id = current_group_id or customer.active_group_id or customer.group_id
+    
+    # Debug log to help diagnose issues
+    logger.info(f"ORDER CONTEXT: current_group_id={current_group_id}, active_group_id={customer.active_group_id}, default_group_id={customer.group_id}, using={group_id}")
+    
+    group = db.query(models.Group).filter(models.Group.id == group_id).first()
+    
+    logger.info(f"Processing message: type={message_type}, content_preview={message[:30]}...")
     
     # STEP 1: Handle the initial welcome/group identification message
     if message_type == "text" and message.lower().startswith("order from group:"):
@@ -141,12 +152,11 @@ async def handle_customer_message(customer, event_data, db):
         if group.welcome_message:
             welcome_message += f"{group.welcome_message}\n\n"
         
-        welcome_message += "How would you like to place your order?"
+        welcome_message += "What would you like to do?"
         
         buttons = [
             {"id": "place_order", "title": "Place Order"},
             {"id": "track_order", "title": "Track My Order"},
-            {"id": "contact_support", "title": "Contact Support"}
         ]
         
         whatsapp_service.send_quick_reply_buttons(phone_number, welcome_message, buttons)
@@ -155,6 +165,7 @@ async def handle_customer_message(customer, event_data, db):
     # STEP 2: Handle button responses
     if message_type == "button":
         button_id = event_data.get("button_id", "")
+        logger.info(f"Processing button click: {button_id}")
         
         # Handle main menu options
         if button_id == "place_order":
@@ -219,7 +230,7 @@ async def handle_customer_message(customer, event_data, db):
             return
         
         # Handle payment options
-        elif button_id == "pay_mpesa":
+        elif button_id == "mpesa_message" or button_id == "pay_with_m-pesa":
             mpesa_msg = "Please send your payment to our M-Pesa number and then share the transaction message/code/confirmation with us."
             whatsapp_service.send_text_message(phone_number, mpesa_msg)
             return
@@ -281,20 +292,26 @@ async def handle_customer_message(customer, event_data, db):
             return
     
     # STEP 3: Handle M-Pesa transaction codes
-    # Basic pattern matching for M-Pesa transaction codes (usually 10 characters)
+    # More comprehensive pattern matching for M-Pesa transaction messages
     if message_type == "text" and (
-            (len(message) >= 8 and len(message) <= 12 and message.isalnum()) or
-            message.upper().startswith("M-PESA") or
-            "TRANSACTION" in message.upper()
+        (len(message) >= 8 and len(message) <= 12 and message.isalnum()) or 
+        message.upper().startswith("M-PESA") or 
+        "TRANSACTION" in message.upper() or
+        "CONFIRMED" in message.upper() or
+        "RECEIVED KSH" in message.upper() or
+        "MPESA" in message.upper()
     ):
+        logger.info(f"Detected M-Pesa transaction message: {message[:30]}...")
+        
         # Extract what might be the transaction code
         transaction_code = message.upper()
-        if "TRANSACTION" in transaction_code:
+        import re
+        if len(message) > 12:  # Long message - try to extract code
             # Try to extract just the code from messages like "M-PESA TRANSACTION AB12345678"
-            import re
             match = re.search(r'[A-Z0-9]{8,12}', transaction_code)
             if match:
                 transaction_code = match.group(0)
+                logger.info(f"Extracted transaction code: {transaction_code}")
         
         # Find the customer's most recent pending order
         last_order = db.query(models.Order).filter(
@@ -308,6 +325,7 @@ async def handle_customer_message(customer, event_data, db):
             last_order.payment_ref = transaction_code
             last_order.payment_status = models.PaymentStatus.PAID  # Mark as paid but not verified
             db.commit()
+            logger.info(f"Updated order {last_order.order_number} with M-Pesa payment: {transaction_code}")
             
             # Send confirmation
             whatsapp_service.send_payment_confirmation(
@@ -319,19 +337,58 @@ async def handle_customer_message(customer, event_data, db):
                 }
             )
         else:
+            logger.warning(f"Received M-Pesa payment but no pending order found for customer {customer.id}")
             whatsapp_service.send_text_message(
                 phone_number,
                 "Thank you for the payment information, but we couldn't find a pending order. Please place an order first."
             )
-        return
+        return  # This return is crucial to prevent falling through to order creation
     
     # STEP 4: Handle order placement from text
     if message_type == "text" and len(message) > 10 and not message.startswith("order from group:"):
+        # Double-check this isn't an M-Pesa message that somehow got through the filter
+        if (message.upper().startswith("M-PESA") or 
+            "TRANSACTION" in message.upper() or 
+            "CONFIRMED" in message.upper() or
+            "RECEIVED KSH" in message.upper()
+        ):
+            logger.warning(f"Prevented M-Pesa message from creating order: {message[:30]}...")
+            
+            # Try to handle it as an M-Pesa message
+            # This duplicates the logic from above which isn't ideal but provides a safety net
+            # Find the customer's most recent pending order
+            last_order = db.query(models.Order).filter(
+                models.Order.customer_id == customer.id,
+                models.Order.status == models.OrderStatus.PENDING
+            ).order_by(models.Order.created_at.desc()).first()
+            
+            if last_order:
+                last_order.payment_method = models.PaymentMethod.MPESA
+                last_order.payment_ref = "EXTRACTED_FROM_MESSAGE"
+                last_order.payment_status = models.PaymentStatus.PAID
+                db.commit()
+                
+                whatsapp_service.send_payment_confirmation(
+                    phone_number,
+                    {
+                        "method": "mpesa",
+                        "order_number": last_order.order_number,
+                        "payment_ref": "Your payment"
+                    }
+                )
+            else:
+                whatsapp_service.send_text_message(
+                    phone_number,
+                    "Thank you for the payment information, but we couldn't find a pending order. Please place an order first."
+                )
+            return
+        
         try:
+            logger.info(f"Creating new order for customer {customer.id} in group {group_id}")
             # Create a new order with the text as details
             order = models.Order(
                 customer_id=customer.id,
-                group_id=customer.group_id,
+                group_id=group_id,
                 order_details=message,
                 status=models.OrderStatus.PENDING,
                 total_amount=0.00  # This will be updated by the admin later
@@ -340,6 +397,7 @@ async def handle_customer_message(customer, event_data, db):
             db.add(order)
             db.commit()
             db.refresh(order)
+            logger.info(f"Created new order with ID {order.id}, number {order.order_number}")
             
             # Send confirmation with payment options
             whatsapp_service.send_order_confirmation(
@@ -359,6 +417,7 @@ async def handle_customer_message(customer, event_data, db):
         return
     
     # STEP 5: Default response for unrecognized messages
+    logger.info(f"Unrecognized message, sending default options menu")
     default_message = "I'm not sure what you're asking. Please choose an option below:"
     
     buttons = [

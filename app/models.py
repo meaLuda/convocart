@@ -102,32 +102,67 @@ class User(Base, TimestampMixin):
         self.reset_token_expires_at = datetime.utcnow() + datetime.timedelta(hours=expires_in_hours)
         return token
 
+class Customer(Base, TimestampMixin):
+    """Customer model for storing customer information. Each customer is tied to a group."""
+    __tablename__ = "customers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    phone_number = Column(String(20), nullable=False, index=True)
+    
+    # New field to track the current session group context
+    active_group_id = Column(Integer, ForeignKey("groups.id"), nullable=True)
+    
+    # Relationships - specify foreign_keys explicitly to resolve ambiguity
+    group = relationship("Group", back_populates="customers", foreign_keys=[group_id])
+    active_group = relationship("Group", foreign_keys=[active_group_id])
+    orders = relationship("Order", back_populates="customer")
+    
+    @validates('phone_number')
+    def validate_phone(self, key, phone):
+        if phone is not None:
+            # Remove any non-digit characters
+            clean_phone = re.sub(r'\D', '', phone)
+            # Ensure it's a valid length
+            if len(clean_phone) < 9 or len(clean_phone) > 15:
+                raise ValueError("Phone number must be between 9 and 15 digits")
+            return clean_phone
+        return phone
+    
+    class Meta:
+        # Define table constraints
+        __table_args__ = (
+            # Ensure phone_number is unique within a group
+            UniqueConstraint('group_id', 'phone_number', name='uix_customer_group_phone'),
+        )
+
 
 class Group(Base, TimestampMixin):
     __tablename__ = "groups"
-
+    
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     identifier = Column(String(50), unique=True, index=True, nullable=False)
     description = Column(Text, nullable=True)
-    category = Column(String(50), nullable=True)  # e.g., "food", "retail", "services"
-    welcome_message = Column(Text, nullable=True)  # Custom welcome message for this group
-    logo_url = Column(String(255), nullable=True)  # URL to the group's logo
+    category = Column(String(50), nullable=True)
+    welcome_message = Column(Text, nullable=True)
+    logo_url = Column(String(255), nullable=True)
     contact_email = Column(String(100), nullable=True)
     contact_phone = Column(String(20), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     
-    # Relationships
+    # Relationships - specify foreign_keys in the Customer relationship
     users = relationship("User", secondary=user_groups, back_populates="groups")
+    customers = relationship("Customer", back_populates="group", foreign_keys=[Customer.group_id])
     orders = relationship("Order", back_populates="group")
-    customers = relationship("Customer", back_populates="group")
+    
     @validates('identifier')
     def validate_identifier(self, key, identifier):
         # Ensure identifier is URL-friendly
         if not re.match(r'^[a-z0-9_-]+$', identifier):
             raise ValueError("Identifier can only contain lowercase letters, numbers, underscores, and dashes")
         return identifier
-
 
 class Configuration(Base, TimestampMixin):
     __tablename__ = "configurations"
@@ -160,37 +195,6 @@ class Configuration(Base, TimestampMixin):
         return config
 
 
-class Customer(Base, TimestampMixin):
-    """Customer model for storing customer information. Each customer is tied to a group."""
-    __tablename__ = "customers"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
-    name = Column(String(100), nullable=False)
-    phone_number = Column(String(20), nullable=False, index=True)
-
-    
-    # Relationships
-    group = relationship("Group", back_populates="customers")
-    orders = relationship("Order", back_populates="customer")
-    
-    @validates('phone_number')
-    def validate_phone(self, key, phone):
-        if phone is not None:
-            # Remove any non-digit characters
-            clean_phone = re.sub(r'\D', '', phone)
-            # Ensure it's a valid length (adjust as needed for your country)
-            if len(clean_phone) < 9 or len(clean_phone) > 15:
-                raise ValueError("Phone number must be between 9 and 15 digits")
-            return clean_phone
-        return phone
-    
-    class Meta:
-        # Define table constraints
-        __table_args__ = (
-            # Ensure phone_number is unique within a group
-            UniqueConstraint('group_id', 'phone_number', name='uix_customer_group_phone'),
-        )
 
 
 class Order(Base, TimestampMixin):

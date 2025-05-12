@@ -1,7 +1,7 @@
 <!-- app/templates/settings.html -->
 {% extends "base.html" %}
 
-{% block title %}System Settings | WhatsApp Order Bot{% endblock %}
+{% block title %} Settings | WhatsApp Order Bot{% endblock %}
 
 {% block content %}
 <div class="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -9,6 +9,7 @@
     
     <form method="POST" action="/admin/settings/update">
         <div class="space-y-6">
+            {% if admin.role.value == 'super_admin' %}
             <!-- WhatsApp Settings -->
             <div>
                 <h2 class="text-xl font-semibold mb-4 border-b pb-2">WhatsApp Settings</h2>
@@ -27,7 +28,7 @@
                     <p class="mt-1 text-sm text-gray-500">Enter your WhatsApp Business phone number without the + prefix.</p>
                 </div>
             </div>
-            
+            {% endif %}
             <!-- Other Settings (Can be expanded later) -->
             <div>
                 <h2 class="text-xl font-semibold mb-4 border-b pb-2">General Settings</h2>

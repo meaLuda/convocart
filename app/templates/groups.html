@@ -12,9 +12,11 @@
             <a href="/admin/groups/new" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
                 Add New Group
             </a>
+            {% if admin.role.value == 'super_admin' %}
             <a href="/admin/groups/link-generator" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
                 Generate Links
             </a>
+            {% endif %}
         </div>
     </div>
     

@@ -159,7 +159,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     # Get the current admin user from the cookie
     current_admin = await get_current_admin(request, db)
     if not current_admin:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise RedirectResponse(url="/admin/login", status_code=303)
     
     # Add debugging logs
     logger.info(f"Dashboard: User {current_admin.username}, role: {current_admin.role}")
@@ -168,24 +168,31 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     
     # Get all orders if super admin, or filter by groups if client admin
     query = db.query(models.Order)
-    
+
     if current_admin.role != models.UserRole.SUPER_ADMIN:
         if not current_admin.groups:
             logger.info(f"User {current_admin.username} has no groups, showing no orders")
-            # Use False as filter condition to return no results
             query = query.filter(False)
         else:
+            group_ids = [group.id for group in current_admin.groups]
             logger.info(f"Filtering dashboard orders for groups: {group_ids}")
-            # Filter orders by these group IDs
+            # Ensure this filter is applied BEFORE execution
             query = query.filter(models.Order.group_id.in_(group_ids))
-    
-    # Get recent orders
+            logger.info(f"SQL Query: {str(query.statement.compile(dialect=db.bind.dialect))}")
+        
+    # IMPORTANT: Execute the query AFTER filters are applied
     orders = query.order_by(models.Order.created_at.desc()).limit(10).all()
     
     # Get order statistics - adjust filters as needed
-    total_orders = query.count()
-    pending_orders = query.filter(models.Order.status == models.OrderStatus.PENDING).count()
-    completed_orders = query.filter(models.Order.status == models.OrderStatus.COMPLETED).count()
+    # Make sure to reapply the same filters for consistent counts
+    base_query = db.query(models.Order)
+    if current_admin.role != models.UserRole.SUPER_ADMIN and current_admin.groups:
+        group_ids = [group.id for group in current_admin.groups]
+        base_query = base_query.filter(models.Order.group_id.in_(group_ids))
+    
+    total_orders = base_query.count()
+    pending_orders = base_query.filter(models.Order.status == models.OrderStatus.PENDING).count()
+    completed_orders = base_query.filter(models.Order.status == models.OrderStatus.COMPLETED).count()
     
     # Add pagination variables
     page_size = 10
@@ -218,7 +225,8 @@ async def view_orders(
     """
     # Get the current admin user from the cookie
     current_admin = await get_current_admin(request, db)
-    
+    if not current_admin:
+        raise RedirectResponse(url="/admin/login", status_code=303)
     # Add debugging logs
     logger.info(f"Orders view: User {current_admin.username}, role: {current_admin.role}")
     group_ids = [group.id for group in current_admin.groups]
@@ -231,14 +239,15 @@ async def view_orders(
     if current_admin.role != models.UserRole.SUPER_ADMIN:
         if not current_admin.groups:
             logger.info(f"User {current_admin.username} has no groups, showing no orders")
-            # Use False instead of arbitrary condition for clarity
-            query = query.filter(False)  # This will match nothing
+            query = query.filter(False)
         else:
+            group_ids = [group.id for group in current_admin.groups]
             logger.info(f"Filtering orders for groups: {group_ids}")
-            # Filter orders by these group IDs
+            # Apply the filter BEFORE any execution
             query = query.filter(models.Order.group_id.in_(group_ids))
+            logger.info(f"SQL Query: {str(query.statement.compile(dialect=db.bind.dialect))}")
     
-    # Filter orders by status if provided
+    # Apply additional filters (status filter)
     if status:
         try:
             order_status = models.OrderStatus(status)
@@ -297,12 +306,16 @@ def check_admin_has_access_to_group(admin, group_id, db):
 async def update_order_status(
     order_id: int,
     status: str = Form(...),
+    payment_status: Optional[str] = Form(None),
+    payment_ref: Optional[str] = Form(None),
     notify_customer: bool = Form(False),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
     # Get the current admin user
     current_admin = await get_current_admin(request, db)
+    if not current_admin:
+        raise RedirectResponse(url="/admin/login", status_code=303)
     
     # Get the order
     order = db.query(models.Order).filter(models.Order.id == order_id).first()
@@ -338,6 +351,26 @@ async def update_order_status(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid order status")
     
+    # Get previous status for change detection
+    previous_status = order.status
+    
+    try:
+        # Update the order status using enum
+        order.status = models.OrderStatus(status)
+        
+        # Update payment status if provided
+        if payment_status:
+            order.payment_status = models.PaymentStatus(payment_status)
+        
+        # Update payment reference if provided
+        if payment_ref:
+            order.payment_ref = payment_ref
+            
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid status value: {str(e)}")
+    
+    
     # Notify customer if requested
     if notify_customer:
         # Get customer information
@@ -351,7 +384,7 @@ async def update_order_status(
                 models.OrderStatus.PENDING.value: "🕒 Your order #{} is pending processing. We'll update you soon!",
                 models.OrderStatus.PROCESSING.value: "⚙️ Your order #{} is now being processed. We're working on it!",
                 models.OrderStatus.COMPLETED.value: "✅ Good news! Your order #{} has been completed. Thank you for your business!",
-                models.OrderStatus.CANCELLED.value: "❌ Your order #{} has been cancelled. Please contact us if you have any questions.",
+                models.OrderStatus.CANCELLED.value: "❌ Your order #{} has been cancelled. Please contact group admin you have any questions.",
                 models.OrderStatus.REFUNDED.value: "💰 Your order #{} has been refunded. The amount will be credited back to your account."
             }
             
@@ -392,7 +425,8 @@ async def list_groups(
     """
     # Get the current admin user from the cookie
     current_admin = await get_current_admin(request, db)
-    
+    if not current_admin:
+        raise RedirectResponse(url="/admin/login", status_code=303)
     # Number of groups per page
     page_size = 20
     

@@ -30,24 +30,28 @@
         </div>
     </div>
     
-    {% if orders %}
+        {% if orders %}
     <div class="overflow-x-auto">
         <table class="w-full border-collapse">
             <thead>
                 <tr class="bg-gray-100">
-                    <th class="border p-2 text-left">ID</th>
+                    <th class="border p-2 text-left">Order #</th>
                     <th class="border p-2 text-left">Customer</th>
+                    {% if admin.role.value == 'super_admin' %}
+                    <th class="border p-2 text-left">Group</th>
+                    {% endif %}
                     <th class="border p-2 text-left">Details</th>
                     <th class="border p-2 text-left">Status</th>
+                    <th class="border p-2 text-left">Payment</th>
                     <th class="border p-2 text-left">Amount</th>
-                    <th class="border p-2 text-left">Created</th>
+                    <th class="border p-2 text-left">Date</th>
                     <th class="border p-2 text-left">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for order in orders %}
                 <tr class="hover:bg-gray-50">
-                    <td class="border p-2">{{ order.id }}</td>
+                    <td class="border p-2">{{ order.order_number }}</td>
                     <td class="border p-2">
                         {% if order.id in customer_info %}
                             {{ customer_info[order.id].name }}<br>
@@ -56,6 +60,15 @@
                             Customer #{{ order.customer_id }}
                         {% endif %}
                     </td>
+                    {% if admin.role.value == 'super_admin' %}
+                    <td class="border p-2">
+                        {% if order.group %}
+                            {{ order.group.name }}
+                        {% else %}
+                            Group #{{ order.group_id }}
+                        {% endif %}
+                    </td>
+                    {% endif %}
                     <td class="border p-2">{{ order.order_details[:50] }}{% if order.order_details|length > 50 %}...{% endif %}</td>
                     <td class="border p-2">
                         <span class="px-2 py-1 rounded-full text-xs 
@@ -68,8 +81,31 @@
                             {{ order.status.value }}
                         </span>
                     </td>
+                    <td class="border p-2">
+                        {% if order.payment_method %}
+                            <span class="text-sm">
+                                {{ order.payment_method.value|replace('_', ' ')|title }}
+                                <span class="ml-1 px-1 py-0 text-xs rounded-full 
+                                    {% if order.payment_status.value == 'paid' %}bg-blue-100 text-blue-800
+                                    {% elif order.payment_status.value == 'verified' %}bg-green-100 text-green-800
+                                    {% elif order.payment_status.value == 'unpaid' %}bg-yellow-100 text-yellow-800
+                                    {% elif order.payment_status.value == 'failed' %}bg-red-100 text-red-800
+                                    {% elif order.payment_status.value == 'refunded' %}bg-purple-100 text-purple-800
+                                    {% endif %}">
+                                    {{ order.payment_status.value }}
+                                </span>
+                            </span>
+                            {% if order.payment_ref %}
+                            <br><span class="text-xs text-gray-600">Ref: {{ order.payment_ref }}</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-xs text-gray-500">Not specified</span>
+                        {% endif %}
+                    </td>
                     <td class="border p-2">${{ "%.2f"|format(order.total_amount) }}</td>
-                    <td class="border p-2">{{ order.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td class="border p-2" title="{{ order.created_at }}">
+                        {{ order.created_at.strftime('%Y-%m-%d %H:%M') }}
+                    </td>
                     <td class="border p-2">
                         <form method="POST" action="/admin/orders/{{ order.id }}/status" class="flex flex-col space-y-2">
                             <div class="flex space-x-1">
@@ -83,6 +119,17 @@
                                 <button type="submit" class="bg-blue-600 text-white px-2 py-1 rounded text-sm hover:bg-blue-700">
                                     Update
                                 </button>
+                            </div>
+                            <div class="flex space-x-1">
+                                <select name="payment_status" class="text-sm border rounded px-2 py-1">
+                                    {% for status in ['unpaid', 'paid', 'verified', 'failed', 'refunded'] %}
+                                    <option value="{{ status }}" {% if order.payment_status and order.payment_status.value == status %}selected{% endif %}>
+                                        {{ status|title }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <input type="text" name="payment_ref" placeholder="Payment ref" 
+                                    value="{{ order.payment_ref or '' }}" class="text-sm border rounded px-2 py-1 w-24">
                             </div>
                             <div class="flex items-center">
                                 <input type="checkbox" name="notify_customer" id="notify_{{ order.id }}" value="True" class="mr-2">
