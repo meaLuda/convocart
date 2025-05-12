@@ -1,4 +1,4 @@
-<!-- Updated app/templates/link_generator.html -->
+<!-- Fixed app/templates/link_generator.html -->
 {% extends "base.html" %}
 
 {% block title %}WhatsApp Link Generator | WhatsApp Order Bot{% endblock %}
@@ -82,6 +82,29 @@
                 </div>
             </div>
             
+            <div class="mb-4">
+                <p class="text-sm font-medium text-gray-700 mb-1">Preview</p>
+                <div class="p-3 bg-white border border-gray-300 rounded-md">
+                    <div class="flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                        <span id="link-preview" class="text-blue-600 underline">
+                            {% if selected_group %}Chat with {{ selected_group.name }}{% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <label for="whatsapp-message" class="block text-sm font-medium text-gray-700 mb-1">Message Preview</label>
+                <div class="p-3 bg-white border border-gray-300 rounded-md">
+                    <div class="inline-block px-3 py-2 bg-green-100 rounded-lg max-w-xs">
+                        <span id="message-preview">{{ generated_message }}</span>
+                    </div>
+                </div>
+            </div>
+            
             <div class="mt-4">
                 <label class="block text-sm font-medium text-gray-700 mb-1">Share Options</label>
                 <div class="flex flex-wrap gap-2">
@@ -122,34 +145,33 @@
             <li>Your bot will respond with the appropriate welcome message and options</li>
         </ol>
         
-        <div class="mt-4 p-4 bg-blue-50 border-l-4 border-blue-500 rounded">
-            <p class="text-sm">
-                <strong>Tip:</strong> You can create different groups for different product categories, promotions,
-                or locations. Each group can have its own custom welcome message and product offerings.
-            </p>
-        </div>
     </div>
     {% endif %}
 </div>
+{% endblock %}
 
 {% block scripts %}
 <script>
-// WhatsApp phone number from database settings
-const whatsappPhone = "{{ whatsapp_phone }}"; // This is dynamically populated from server
+// Store the WhatsApp phone number in a variable
+var whatsappPhone = "{{ whatsapp_phone }}";
 
 // Enable/disable generate button based on selection
-document.getElementById('group-select').addEventListener('change', function() {
+document.getElementById('group-select')?.addEventListener('change', function() {
     const generateBtn = document.getElementById('generate-btn');
-    generateBtn.disabled = !this.value;
+    if (generateBtn) {
+        generateBtn.disabled = !this.value;
+    }
 });
 
 // Generate link when button is clicked
-document.getElementById('generate-btn').addEventListener('click', function() {
-    const groupIdentifier = document.getElementById('group-select').value;
+document.getElementById('generate-btn')?.addEventListener('click', function() {
+    const groupSelect = document.getElementById('group-select');
+    if (!groupSelect) return;
+    
+    const groupIdentifier = groupSelect.value;
     if (!groupIdentifier) return;
     
     // Get the selected group name for preview
-    const groupSelect = document.getElementById('group-select');
     const selectedOption = groupSelect.options[groupSelect.selectedIndex];
     const groupName = selectedOption.text;
     
@@ -158,18 +180,26 @@ document.getElementById('generate-btn').addEventListener('click', function() {
     const encodedMessage = encodeURIComponent(messageText);
     const whatsappLink = `https://wa.me/${whatsappPhone}?text=${encodedMessage}`;
     
-    // Update the UI
-    document.getElementById('whatsapp-link').value = whatsappLink;
-    document.getElementById('link-preview').textContent = `Chat with ${groupName}`;
-    document.getElementById('message-preview').textContent = messageText;
-    document.getElementById('wa-share-link').href = `https://api.whatsapp.com/send?text=${encodeURIComponent('Join our ordering system by clicking this link: ' + whatsappLink)}`;
+    // Update the UI - safely with null checks
+    const linkInput = document.getElementById('whatsapp-link');
+    const linkPreview = document.getElementById('link-preview');
+    const messagePreview = document.getElementById('message-preview');
+    const shareLink = document.getElementById('wa-share-link');
+    const resultSection = document.getElementById('link-result');
+    
+    if (linkInput) linkInput.value = whatsappLink;
+    if (linkPreview) linkPreview.textContent = `Chat with ${groupName}`;
+    if (messagePreview) messagePreview.textContent = messageText;
+    if (shareLink) shareLink.href = `https://api.whatsapp.com/send?text=${encodeURIComponent('Join our ordering system by clicking this link: ' + whatsappLink)}`;
     
     // Show the result section
-    document.getElementById('link-result').classList.remove('hidden');
+    if (resultSection) resultSection.classList.remove('hidden');
 });
 
 function copyToClipboard(elementId) {
     const element = document.getElementById(elementId);
+    if (!element) return;
+    
     element.select();
     document.execCommand('copy');
     
@@ -181,5 +211,4 @@ function copyToClipboard(elementId) {
     }, 1000);
 }
 </script>
-{% endblock %}
 {% endblock %}

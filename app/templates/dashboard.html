@@ -1,17 +1,17 @@
-<!-- app/templates/orders.html -->
+<!-- app/templates/dashboard.html -->
 {% extends "base.html" %}
 
-{% block title %}Manage Orders | WhatsApp Order Bot{% endblock %}
+{% block title %}Admin Dashboard | WhatsApp Order Bot{% endblock %}
 
 {% block content %}
     <!-- Admin navigation -->
     <div class="mb-6">
         <nav class="flex flex-wrap gap-2">
-            <a href="/admin/dashboard" class="btn btn-outline flex items-center">
+            <a href="/admin/dashboard" class="btn btn-primary flex items-center">
                 <i class="fas fa-tachometer-alt mr-2"></i>
                 Dashboard
             </a>
-            <a href="/admin/orders" class="btn btn-primary flex items-center">
+            <a href="/admin/orders" class="btn btn-outline flex items-center">
                 <i class="fas fa-shopping-cart mr-2"></i>
                 Orders
             </a>
@@ -19,6 +19,12 @@
                 <i class="fas fa-users mr-2"></i>
                 Groups
             </a>
+            {% if admin.role.value == 'super_admin' %}
+            <a href="/admin/users" class="btn btn-outline flex items-center">
+                <i class="fas fa-user-cog mr-2"></i>
+                Users
+            </a>
+            {% endif %}
             <a href="/admin/groups/link-generator" class="btn btn-outline flex items-center">
                 <i class="fas fa-link mr-2"></i>
                 Link Generator
@@ -30,360 +36,170 @@
         </nav>
     </div>
 
-    <!-- Page header -->
-    <div class="flex flex-col md:flex-row md:justify-between md:items-center mb-6">
-        <div>
-            <h1 class="text-3xl font-bold text-gray-800 mb-2">Orders</h1>
-            <p class="text-gray-600">
-                Manage and track all customer orders
-                {% if status_filter %}
-                - Filtered by <span class="font-medium">{{ status_filter }}</span> status
-                {% endif %}
-            </p>
-        </div>
-
-        <div class="mt-4 md:mt-0">
-            <button class="btn btn-primary flex items-center">
-                <i class="fas fa-file-export mr-2"></i>
-                Export Orders
-            </button>
-        </div>
-    </div>
-
-    <!-- Filter tabs -->
+    <!-- Welcome section with user info -->
     <div class="card mb-6">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <div class="flex flex-wrap gap-2 mb-4 sm:mb-0">
-                <a href="/admin/orders" class="btn {{ 'btn-primary' if not status_filter else 'btn-outline' }}">
-                    <i class="fas fa-list-ul mr-1"></i>
-                    All Orders
-                </a>
-                <a href="/admin/orders?status=pending"
-                    class="btn {{ 'bg-yellow-500 text-white hover:bg-yellow-600' if status_filter == 'pending' else 'btn-outline text-yellow-700 border-yellow-300 bg-yellow-50 hover:bg-yellow-100' }}">
-                    <i class="fas fa-clock mr-1"></i>
-                    Pending
-                </a>
-                <a href="/admin/orders?status=processing"
-                    class="btn {{ 'bg-blue-500 text-white hover:bg-blue-600' if status_filter == 'processing' else 'btn-outline text-blue-700 border-blue-300 bg-blue-50 hover:bg-blue-100' }}">
-                    <i class="fas fa-cogs mr-1"></i>
-                    Processing
-                </a>
-                <a href="/admin/orders?status=completed"
-                    class="btn {{ 'bg-green-500 text-white hover:bg-green-600' if status_filter == 'completed' else 'btn-outline text-green-700 border-green-300 bg-green-50 hover:bg-green-100' }}">
-                    <i class="fas fa-check-circle mr-1"></i>
-                    Completed
-                </a>
-                <a href="/admin/orders?status=cancelled"
-                    class="btn {{ 'bg-red-500 text-white hover:bg-red-600' if status_filter == 'cancelled' else 'btn-outline text-red-700 border-red-300 bg-red-50 hover:bg-red-100' }}">
-                    <i class="fas fa-ban mr-1"></i>
-                    Cancelled
-                </a>
+        <div class="flex flex-col md:flex-row items-start md:items-center justify-between">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800">Welcome, {{ admin.full_name or admin.username }}</h1>
+                <p class="text-gray-600">
+                    {{ admin.role.value|replace('_', ' ')|title }} Account • 
+                    {% if admin.last_login %}
+                    Last login: {{ admin.last_login.strftime('%Y-%m-%d %H:%M') }}
+                    {% else %}
+                    First login
+                    {% endif %}
+                </p>
             </div>
-
-            <div class="relative">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <i class="fas fa-search text-gray-400"></i>
+            <div class="mt-4 md:mt-0 flex items-center">
+                <div class="h-12 w-12 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-bold text-xl">
+                    {{ admin.username[:1]|upper }}
                 </div>
-                <input type="text" id="search-orders" placeholder="Search orders..."
-                    class="form-input pl-10 pr-4 py-2 w-full sm:w-auto" onkeyup="searchOrders()">
             </div>
         </div>
     </div>
 
-    <!-- Orders table -->
+    <!-- Stats overview -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <div class="card bg-white p-6">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Total Orders</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-1">{{ total_orders }}</p>
+                </div>
+                <div class="rounded-full p-3 bg-blue-50">
+                    <i class="fas fa-shopping-bag text-blue-500"></i>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card bg-white p-6">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Pending Orders</p>
+                    <p class="text-3xl font-bold text-yellow-600 mt-1">{{ pending_orders }}</p>
+                </div>
+                <div class="rounded-full p-3 bg-yellow-50">
+                    <i class="fas fa-clock text-yellow-500"></i>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card bg-white p-6">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Completed Orders</p>
+                    <p class="text-3xl font-bold text-green-600 mt-1">{{ completed_orders }}</p>
+                </div>
+                <div class="rounded-full p-3 bg-green-50">
+                    <i class="fas fa-check-circle text-green-500"></i>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card bg-white p-6">
+            <div class="flex justify-between items-start">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">Completion Rate</p>
+                    <p class="text-3xl font-bold text-indigo-600 mt-1">
+                        {% if total_orders > 0 %}
+                        {{ "%.1f"|format(completed_orders / total_orders * 100) }}%
+                        {% else %}
+                        N/A
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="rounded-full p-3 bg-indigo-50">
+                    <i class="fas fa-chart-line text-indigo-500"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent orders -->
     <div class="card">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-bold text-gray-800">Recent Orders</h2>
+            <a href="/admin/orders" class="text-primary-600 hover:text-primary-700 font-medium flex items-center">
+                <span>View all</span>
+                <i class="fas fa-arrow-right ml-1"></i>
+            </a>
+        </div>
+
         {% if orders %}
-        <div class="table-container">
-            <table class="table" id="orders-table">
+        <div class="overflow-x-auto">
+            <table class="w-full border-collapse">
                 <thead>
-                    <tr>
-                        <th scope="col">ID</th>
-                        <th scope="col">Customer</th>
-                        <th scope="col">Details</th>
-                        <th scope="col">Status</th>
-                        <th scope="col">Amount</th>
-                        <th scope="col">Created</th>
-                        <th scope="col">Actions</th>
+                    <tr class="bg-gray-100">
+                        <th class="border p-2 text-left">ID</th>
+                        <th class="border p-2 text-left">Customer</th>
+                        <th class="border p-2 text-left">Status</th>
+                        <th class="border p-2 text-left">Amount</th>
+                        <th class="border p-2 text-left">Created</th>
+                        <th class="border p-2 text-left">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for order in orders %}
-                    <tr class="hover:bg-gray-50 order-row">
-                        <td class="font-medium">#{{ order.id }}</td>
-                        <td>
-                            {% if order.id in customer_info %}
-                            <div class="flex items-center">
-                                <div
-                                    class="h-8 w-8 flex-shrink-0 rounded-full bg-primary-100 flex items-center justify-center">
-                                    <span class="font-medium text-primary-600">{{ customer_info[order.id].name[:1] }}</span>
-                                </div>
-                                <div class="ml-3">
-                                    <div class="text-sm font-medium text-gray-900">{{ customer_info[order.id].name }}</div>
-                                    <div class="text-xs text-gray-500">{{ customer_info[order.id].phone_number }}</div>
-                                </div>
-                            </div>
-                            {% else %}
-                            <div class="flex items-center">
-                                <div
-                                    class="h-8 w-8 flex-shrink-0 rounded-full bg-gray-200 flex items-center justify-center">
-                                    <i class="fas fa-user text-gray-500"></i>
-                                </div>
-                                <div class="ml-3">
-                                    <div class="text-sm font-medium text-gray-900">Customer #{{ order.customer_id }}</div>
-                                    <div class="text-xs text-gray-500">No details available</div>
-                                </div>
-                            </div>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <div class="max-w-xs truncate" title="{{ order.order_details }}">
-                                {{ order.order_details[:40] }}{% if order.order_details|length > 40 %}...{% endif %}
-                            </div>
-                        </td>
-                        <td>
-                            <span class="badge 
-                                    {% if order.status == 'pending' %}badge-yellow
-                                    {% elif order.status == 'processing' %}badge-blue
-                                    {% elif order.status == 'completed' %}badge-green
-                                    {% elif order.status == 'cancelled' %}badge-red
-                                    {% endif %}">
-                                {{ order.status }}
+                    <tr class="hover:bg-gray-50">
+                        <td class="border p-2">{{ order.id }}</td>
+                        <td class="border p-2">Customer #{{ order.customer_id }}</td>
+                        <td class="border p-2">
+                            <span class="px-2 py-1 rounded-full text-xs 
+                                {% if order.status.value == 'pending' %}bg-yellow-100 text-yellow-800
+                                {% elif order.status.value == 'processing' %}bg-blue-100 text-blue-800
+                                {% elif order.status.value == 'completed' %}bg-green-100 text-green-800
+                                {% elif order.status.value == 'cancelled' %}bg-red-100 text-red-800
+                                {% elif order.status.value == 'refunded' %}bg-purple-100 text-purple-800
+                                {% endif %}">
+                                {{ order.status.value }}
                             </span>
                         </td>
-                        <td class="font-medium">${{ "%.2f"|format(order.total_amount) }}</td>
-                        <td>
-                            <div class="text-sm text-gray-500">
-                                {{ order.created_at.strftime('%Y-%m-%d') }}
-                                <div class="text-xs">{{ order.created_at.strftime('%H:%M') }}</div>
-                            </div>
-                        </td>
-                        <td>
-                            <div class="relative group">
-                                <button class="btn btn-sm btn-outline"
-                                    onclick="document.getElementById('dropdown-{{ order.id }}').classList.toggle('hidden')">
-                                    <span>Actions</span>
-                                    <i class="fas fa-chevron-down ml-1"></i>
-                                </button>
-                                <!-- Dropdown menu -->
-                                <div id="dropdown-{{ order.id }}"
-                                    class="hidden absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5 divide-y divide-gray-100 z-50">
-                                    <div class="py-1">
-                                        <button
-                                            class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                            onclick="showStatusModal({{ order.id }})">
-                                            <i class="fas fa-edit w-5 text-gray-400"></i>
-                                            <span>Update Status</span>
-                                        </button>
-                                        <a href="#"
-                                            class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                                            <i class="fas fa-eye w-5 text-gray-400"></i>
-                                            <span>View Details</span>
-                                        </a>
-                                        <button
-                                            class="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                                            <i class="fas fa-comment-alt w-5 text-gray-400"></i>
-                                            <span>Message Customer</span>
-                                        </button>
-                                    </div>
-                                    <div class="py-1">
-                                        <button
-                                            class="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-gray-100">
-                                            <i class="fas fa-trash-alt w-5 text-red-400"></i>
-                                            <span>Delete Order</span>
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
+                        <td class="border p-2">${{ "%.2f"|format(order.total_amount) }}</td>
+                        <td class="border p-2">{{ order.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td class="border p-2">
+                            <a href="/admin/orders?id={{ order.id }}" class="text-blue-600 hover:text-blue-800">
+                                View
+                            </a>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-
-        <!-- Pagination -->
-        {% if total_pages > 1 %}
-        <div class="mt-6 flex flex-col sm:flex-row justify-between items-center">
-            <div class="mb-4 sm:mb-0">
-                <p class="text-sm text-gray-700">
-                    Showing page <span class="font-medium">{{ current_page }}</span> of <span class="font-medium">{{
-                        total_pages }}</span>
-                    (<span class="font-medium">{{ total_orders }}</span> total orders)
-                </p>
-            </div>
-
-            <div class="flex justify-center space-x-2">
-                {% if current_page > 1 %}
-                <a href="/admin/orders?page={{ current_page - 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}"
-                    class="btn btn-outline">
-                    <i class="fas fa-chevron-left mr-1"></i>
-                    Previous
-                </a>
-                {% else %}
-                <button disabled class="btn btn-outline opacity-50 cursor-not-allowed">
-                    <i class="fas fa-chevron-left mr-1"></i>
-                    Previous
-                </button>
-                {% endif %}
-
-                <div class="flex">
-                    {% for i in range(max(1, current_page - 2), min(total_pages + 1, current_page + 3)) %}
-                    <a href="/admin/orders?page={{ i }}{% if status_filter %}&status={{ status_filter }}{% endif %}"
-                        class="inline-flex items-center px-4 py-2 border border-gray-300 {{ 'bg-primary-50 border-primary-500 text-primary-600' if i == current_page else 'bg-white text-gray-700 hover:bg-gray-50' }} text-sm font-medium">
-                        {{ i }}
-                    </a>
-                    {% endfor %}
-                </div>
-
-                {% if current_page < total_pages %} <a
-                    href="/admin/orders?page={{ current_page + 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}"
-                    class="btn btn-outline">
-                    Next
-                    <i class="fas fa-chevron-right ml-1"></i>
-                    </a>
-                    {% else %}
-                    <button disabled class="btn btn-outline opacity-50 cursor-not-allowed">
-                        Next
-                        <i class="fas fa-chevron-right ml-1"></i>
-                    </button>
-                    {% endif %}
-            </div>
-        </div>
-        {% endif %}
-
         {% else %}
-        <div class="bg-gray-50 rounded-lg p-8 text-center">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-200 mb-4">
-                <i class="fas fa-inbox text-gray-500 text-2xl"></i>
-            </div>
-            <h3 class="text-lg font-medium text-gray-800 mb-2">No Orders Found</h3>
-            <p class="text-gray-500 max-w-md mx-auto">
-                {% if status_filter %}
-                There are no orders with '{{ status_filter }}' status. Try a different filter or check back later.
-                {% else %}
-                There are no orders in the system yet. Once customers start placing orders, they will appear here.
-                {% endif %}
-            </p>
+        <div class="text-center py-8">
+            <p class="text-gray-500 italic">No orders found.</p>
         </div>
         {% endif %}
     </div>
 
-    <!-- Status Update Modal -->
-    <div id="status-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden">
-        <div class="bg-white rounded-lg max-w-md w-full p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-medium text-gray-900">Update Order Status</h3>
-                <button onclick="closeStatusModal()" class="text-gray-400 hover:text-gray-500">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <form id="status-form" method="POST" action="">
-                <div class="mb-4">
-                    <label for="status" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                    <select name="status" id="status" class="form-select">
-                        <option value="pending">Pending</option>
-                        <option value="processing">Processing</option>
-                        <option value="completed">Completed</option>
-                        <option value="cancelled">Cancelled</option>
-                    </select>
+    <!-- Quick links section -->
+    <div class="mt-8">
+        <h2 class="text-xl font-bold text-gray-800 mb-4">Quick Actions</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <a href="/admin/groups/link-generator" class="card bg-white p-5 flex flex-col items-center justify-center hover:bg-gray-50 transition-colors">
+                <div class="rounded-full bg-purple-100 p-4 mb-3">
+                    <i class="fas fa-link text-purple-600 text-xl"></i>
                 </div>
-                <div class="mb-4">
-                    <label class="flex items-center">
-                        <input type="checkbox" name="notify_customer" class="form-checkbox" checked>
-                        <span class="ml-2 text-sm text-gray-700">Notify customer about status change</span>
-                    </label>
-                </div>
-                <div class="mt-5 sm:mt-6 flex space-x-2">
-                    <button type="button" onclick="closeStatusModal()" class="btn btn-outline flex-1">
-                        Cancel
-                    </button>
-                    <button type="submit" class="btn btn-primary flex-1">
-                        Update Status
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Action menu at bottom -->
-    <div class="mt-8 flex justify-center">
-        <div class="bg-white rounded-lg shadow-sm p-4 flex flex-wrap gap-4 justify-center">
-            <a href="/admin/groups/new" class="btn btn-outline flex items-center">
-                <i class="fas fa-plus-circle mr-2"></i>
-                New Group
+                <h3 class="font-bold text-gray-800">Generate WhatsApp Links</h3>
+                <p class="text-sm text-gray-500 text-center mt-1">Create sharing links for your customer groups</p>
             </a>
-            <a href="/admin/groups/link-generator" class="btn btn-outline flex items-center">
-                <i class="fas fa-link mr-2"></i>
-                Generate Link
+            
+            <a href="/admin/groups/new" class="card bg-white p-5 flex flex-col items-center justify-center hover:bg-gray-50 transition-colors">
+                <div class="rounded-full bg-green-100 p-4 mb-3">
+                    <i class="fas fa-users text-green-600 text-xl"></i>
+                </div>
+                <h3 class="font-bold text-gray-800">Create New Group</h3>
+                <p class="text-sm text-gray-500 text-center mt-1">Set up a new customer group</p>
             </a>
-            <a href="/admin/settings" class="btn btn-outline flex items-center">
-                <i class="fas fa-cog mr-2"></i>
-                System Settings
+            
+            <a href="/admin/settings" class="card bg-white p-5 flex flex-col items-center justify-center hover:bg-gray-50 transition-colors">
+                <div class="rounded-full bg-blue-100 p-4 mb-3">
+                    <i class="fas fa-cog text-blue-600 text-xl"></i>
+                </div>
+                <h3 class="font-bold text-gray-800">System Settings</h3>
+                <p class="text-sm text-gray-500 text-center mt-1">Configure WhatsApp and system settings</p>
             </a>
         </div>
     </div>
-
-    {% block scripts %}
-    <script>
-        // Search functionality
-        function searchOrders() {
-            const input = document.getElementById('search-orders');
-            const filter = input.value.toUpperCase();
-            const table = document.getElementById('orders-table');
-            const rows = table.getElementsByClassName('order-row');
-
-            for (let i = 0; i < rows.length; i++) {
-                let visible = false;
-                const cells = rows[i].getElementsByTagName('td');
-
-                for (let j = 0; j < cells.length; j++) {
-                    const cellText = cells[j].textContent || cells[j].innerText;
-                    if (cellText.toUpperCase().indexOf(filter) > -1) {
-                        visible = true;
-                        break;
-                    }
-                }
-
-                rows[i].style.display = visible ? '' : 'none';
-            }
-        }
-
-        // Status update modal
-        function showStatusModal(orderId) {
-            const modal = document.getElementById('status-modal');
-            const form = document.getElementById('status-form');
-
-            // Hide all dropdowns
-            const dropdowns = document.querySelectorAll('[id^="dropdown-"]');
-            dropdowns.forEach(dropdown => dropdown.classList.add('hidden'));
-
-            // Update form action
-            form.action = `/admin/orders/${orderId}/status`;
-
-            // Show modal
-            modal.classList.remove('hidden');
-        }
-
-        function closeStatusModal() {
-            const modal = document.getElementById('status-modal');
-            modal.classList.add('hidden');
-        }
-
-        // Close modal when clicking outside
-        window.addEventListener('click', function (event) {
-            const modal = document.getElementById('status-modal');
-            if (event.target === modal) {
-                closeStatusModal();
-            }
-        });
-
-        // Close all dropdowns when clicking outside
-        document.addEventListener('click', function (event) {
-            if (!event.target.closest('.relative.group')) {
-                const dropdowns = document.querySelectorAll('[id^="dropdown-"]');
-                dropdowns.forEach(dropdown => dropdown.classList.add('hidden'));
-            }
-        });
-    </script>
-    {% endblock %}
 {% endblock %}

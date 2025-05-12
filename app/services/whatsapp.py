@@ -2,7 +2,7 @@
 import json
 import logging
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from app.config import WHATSAPP_API_URL, WHATSAPP_PHONE_ID, WHATSAPP_API_TOKEN
 
 logger = logging.getLogger(__name__)
@@ -69,19 +69,88 @@ class WhatsAppService:
         
         return self._make_request(payload)
     
+    def send_list_message(self, to: str, message: str, sections: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Send an interactive list message
+        sections: list of section dictionaries with 'title' and 'rows' keys
+        """
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "interactive",
+            "interactive": {
+                "type": "list",
+                "body": {
+                    "text": message
+                },
+                "action": {
+                    "button": "View Options",
+                    "sections": sections
+                }
+            }
+        }
+        
+        return self._make_request(payload)
+    
     def send_order_confirmation(self, to: str, order_details: Dict[str, Any]) -> Dict[str, Any]:
         """
         Send an order confirmation message
         """
-        # Format the order details as a string
-        confirmation_text = f"🛒 *ORDER CONFIRMATION* 🛒\n\n"
-        confirmation_text += f"Order #{order_details.get('order_id', 'N/A')}\n"
-        confirmation_text += f"Items: {order_details.get('items', 'N/A')}\n"
-        confirmation_text += f"Total: ${order_details.get('total', '0.00')}\n\n"
-        confirmation_text += "Thank you for your order! 🙏\n"
-        confirmation_text += "Your order has been received and is being processed."
+        # Format order items nicely if provided as JSON
+        items_text = ""
+        items = order_details.get('items', [])
         
-        return self.send_text_message(to, confirmation_text)
+        if isinstance(items, list):
+            for i, item in enumerate(items, 1):
+                name = item.get('name', 'Unknown item')
+                quantity = item.get('quantity', 1)
+                price = item.get('price', 0)
+                items_text += f"{i}. {name} x{quantity} - ${price:.2f}\n"
+        else:
+            # Just use the raw text if not in expected format
+            items_text = str(items)
+        
+        confirmation_text = f"📝 *ORDER CONFIRMATION*\n"
+        confirmation_text += f"Order #: {order_details.get('order_number', 'N/A')}\n\n"
+        confirmation_text += f"*Items:*\n{items_text}\n"
+        
+        if 'total_amount' in order_details:
+            confirmation_text += f"*Total:* ${order_details.get('total_amount', 0):.2f}\n\n"
+            
+        confirmation_text += "Thank you for your order! 🙏\n"
+        confirmation_text += "What would you like to do next?"
+        
+        # Add payment options buttons
+        buttons = [
+            {"id": "pay_mpesa", "title": "Pay with M-Pesa"},
+            {"id": "pay_cash", "title": "Pay on Delivery"},
+            {"id": "cancel_order", "title": "Cancel Order"}
+        ]
+        
+        return self.send_quick_reply_buttons(to, confirmation_text, buttons)
+    
+    def send_payment_confirmation(self, to: str, payment_details: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Send a payment confirmation message
+        """
+        payment_method = payment_details.get('method', 'Unknown')
+        order_number = payment_details.get('order_number', 'N/A')
+        payment_ref = payment_details.get('payment_ref', 'N/A')
+        
+        if payment_method == 'mpesa':
+            message = f"✅ *PAYMENT CONFIRMED*\n\n"
+            message += f"Order #: {order_number}\n"
+            message += f"Payment Method: M-Pesa\n"
+            message += f"Transaction Code: {payment_ref}\n\n"
+            message += "Your order has been received and is being processed. Thank you!"
+        else:  # cash on delivery
+            message = f"✅ *ORDER CONFIRMED*\n\n"
+            message += f"Order #: {order_number}\n"
+            message += f"Payment Method: Cash on Delivery\n\n"
+            message += "Your order has been received and is being processed. You will pay upon delivery. Thank you!"
+        
+        return self.send_text_message(to, message)
     
     def _make_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -163,6 +232,18 @@ class WhatsAppService:
                                 "message": button_title,
                                 "button_id": button_id,
                                 "type": "button"
+                            }
+                        elif interactive.get("type") == "list_reply":
+                            list_reply = interactive.get("list_reply", {})
+                            list_id = list_reply.get("id", "")
+                            list_title = list_reply.get("title", "")
+                            
+                            return {
+                                "phone_number": from_number,
+                                "name": contact_name,
+                                "message": list_title,
+                                "list_id": list_id,
+                                "type": "list"
                             }
             
             return None

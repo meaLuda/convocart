@@ -30,3 +30,5 @@ node_modules/
 package-lock.json
 
 lander.html
+migrations/
+*.ini

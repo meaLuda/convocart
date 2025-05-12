@@ -1,0 +1,184 @@
+<!-- app/templates/user_form.html -->
+{% extends "base.html" %}
+
+{% block title %}{{ "Edit" if user else "New" }} User | WhatsApp Order Bot{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow-md p-6 mb-6">
+    <h1 class="text-2xl font-bold mb-6">{{ "Edit" if user else "Create New" }} User</h1>
+    
+    <form method="POST" class="space-y-6">
+        <!-- Basic User Information -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Username *</label>
+                <input type="text" name="username" id="username" required
+                    value="{{ user.username if user else '' }}"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                <p class="text-xs text-gray-500 mt-1">Unique username for login (no spaces)</p>
+            </div>
+            
+            <div>
+                <label for="full_name" class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                <input type="text" name="full_name" id="full_name"
+                    value="{{ user.full_name if user else '' }}"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                <p class="text-xs text-gray-500 mt-1">User's full name</p>
+            </div>
+            
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input type="email" name="email" id="email"
+                    value="{{ user.email if user else '' }}"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                <p class="text-xs text-gray-500 mt-1">Valid email address for notifications</p>
+            </div>
+            
+            <div>
+                <label for="phone_number" class="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                <input type="tel" name="phone_number" id="phone_number"
+                    value="{{ user.phone_number if user else '' }}"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                <p class="text-xs text-gray-500 mt-1">Valid phone number (e.g., +254712345678)</p>
+            </div>
+            
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700 mb-1">{{ "New Password" if user else "Password *" }}</label>
+                <input type="password" name="password" id="password" {{ "required" if not user else "" }}
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                <p class="text-xs text-gray-500 mt-1">
+                    {% if user %}
+                    Leave blank to keep current password
+                    {% else %}
+                    Strong password (min 8 characters)
+                    {% endif %}
+                </p>
+            </div>
+            
+            <div>
+                <label for="role" class="block text-sm font-medium text-gray-700 mb-1">User Role *</label>
+                <select name="role" id="role" required
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    {% for role_value in roles %}
+                    <option value="{{ role_value }}" {% if user and user.role.value == role_value %}selected{% endif %}>
+                        {{ role_value|replace('_', ' ')|title }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Determines user permissions</p>
+            </div>
+            
+            <div>
+                <label for="is_active" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <div class="mt-1">
+                    <label class="inline-flex items-center">
+                        <input type="checkbox" name="is_active" id="is_active" value="True"
+                            {% if user is none or user.is_active %}checked{% endif %}
+                            class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                        <span class="ml-2">Active</span>
+                    </label>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">Inactive users cannot log in</p>
+            </div>
+        </div>
+        
+        <!-- Group Assignments -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Assign to Groups</label>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 mt-2">
+                {% for group in groups %}
+                <label class="inline-flex items-center p-2 border rounded-md hover:bg-gray-50">
+                    <input type="checkbox" name="groups" value="{{ group.id }}"
+                        {% if user and group.id in user_groups %}checked{% endif %}
+                        class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                    <span class="ml-2">{{ group.name }}</span>
+                    {% if group.category %}
+                    <span class="ml-1 text-xs text-gray-500">({{ group.category }})</span>
+                    {% endif %}
+                </label>
+                {% endfor %}
+            </div>
+            <p class="text-xs text-gray-500 mt-1">Select which groups this user can manage</p>
+        </div>
+        
+        <div class="flex justify-between pt-4">
+            <a href="/admin/users" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">
+                Cancel
+            </a>
+            
+            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                {{ "Update" if user else "Create" }} User
+            </button>
+        </div>
+    </form>
+</div>
+
+{% if user %}
+<div class="bg-white rounded-lg shadow-md p-6">
+    <h2 class="text-xl font-bold mb-4">Account Options</h2>
+    
+    <div class="flex flex-col sm:flex-row gap-4">
+        <form method="POST" action="/admin/users/{{ user.id }}/reset-password" class="flex-1"
+              onsubmit="return confirm('Generate password reset token for this user?');">
+            <button type="submit" class="w-full px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700">
+                <i class="fas fa-key mr-2"></i>
+                Generate Password Reset Token
+            </button>
+        </form>
+        
+        {% if admin.id != user.id %}
+        <form method="POST" action="/admin/users/{{ user.id }}/delete" class="flex-1"
+              onsubmit="return confirm('Are you sure you want to delete this user? This action cannot be undone.');">
+            <button type="submit" class="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+                <i class="fas fa-trash-alt mr-2"></i>
+                Delete User
+            </button>
+        </form>
+        {% endif %}
+    </div>
+    
+    {% if reset_token %}
+    <div class="mt-4 p-4 bg-yellow-50 border-l-4 border-yellow-500 rounded">
+        <p class="font-medium">Password Reset Token Generated</p>
+        <p class="text-sm mt-1">Share this token with the user. It will expire in 24 hours.</p>
+        <div class="flex mt-2">
+            <input type="text" value="{{ reset_token }}" readonly 
+                   class="flex-grow p-2 border border-gray-300 rounded-l-md bg-gray-50 font-mono text-sm"
+                   id="reset-token-input"
+                   onclick="this.select()">
+            <button onclick="copyToClipboard('reset-token-input')" 
+                    class="px-4 py-2 bg-blue-600 text-white rounded-r-md hover:bg-blue-700">
+                Copy
+            </button>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{% block scripts %}
+<script>
+// Copy to clipboard function
+function copyToClipboard(elementId) {
+    const element = document.getElementById(elementId);
+    element.select();
+    document.execCommand('copy');
+    
+    // Show a brief "Copied!" message
+    const originalValue = element.value;
+    element.value = "Copied!";
+    setTimeout(() => {
+        element.value = originalValue;
+    }, 1000);
+}
+
+// Validate email format when changing
+document.getElementById('email').addEventListener('change', function() {
+    if (this.value && !this.value.match(/^[^@]+@[^@]+\.[^@]+$/)) {
+        alert('Please enter a valid email address');
+        this.focus();
+    }
+});
+</script>
+{% endblock %}
+{% endblock %}

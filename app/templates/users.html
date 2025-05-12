@@ -1,0 +1,179 @@
+<!-- app/templates/users.html -->
+{% extends "base.html" %}
+
+{% block title %}Manage Users | WhatsApp Order Bot{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow-md p-6 mb-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">System Users</h1>
+        
+        <div>
+            <a href="/admin/users/new" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center">
+                <i class="fas fa-user-plus mr-2"></i>
+                Add New User
+            </a>
+        </div>
+    </div>
+    
+    {% if users %}
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse">
+            <thead>
+                <tr class="bg-gray-100">
+                    <th class="border p-2 text-left">ID</th>
+                    <th class="border p-2 text-left">Username</th>
+                    <th class="border p-2 text-left">Full Name</th>
+                    <th class="border p-2 text-left">Contact</th>
+                    <th class="border p-2 text-left">Role</th>
+                    <th class="border p-2 text-left">Status</th>
+                    <th class="border p-2 text-left">Last Login</th>
+                    <th class="border p-2 text-left">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr class="hover:bg-gray-50 {% if user.id == admin.id %}bg-blue-50{% endif %}">
+                    <td class="border p-2">{{ user.id }}</td>
+                    <td class="border p-2 font-medium">
+                        {{ user.username }}
+                        {% if user.id == admin.id %}
+                        <span class="ml-1 text-xs text-blue-600">(you)</span>
+                        {% endif %}
+                    </td>
+                    <td class="border p-2">{{ user.full_name or '-' }}</td>
+                    <td class="border p-2">
+                        {% if user.email %}
+                        <div class="flex items-center text-gray-600">
+                            <i class="fas fa-envelope w-4 mr-1"></i>
+                            <span class="text-sm">{{ user.email }}</span>
+                        </div>
+                        {% endif %}
+                        
+                        {% if user.phone_number %}
+                        <div class="flex items-center text-gray-600 mt-1">
+                            <i class="fas fa-phone w-4 mr-1"></i>
+                            <span class="text-sm">{{ user.phone_number }}</span>
+                        </div>
+                        {% endif %}
+                        
+                        {% if not user.email and not user.phone_number %}
+                        <span class="text-gray-400">No contact info</span>
+                        {% endif %}
+                    </td>
+                    <td class="border p-2">
+                        <span class="px-2 py-1 rounded-full text-xs 
+                            {% if user.role.value == 'super_admin' %}bg-purple-100 text-purple-800
+                            {% elif user.role.value == 'client_admin' %}bg-blue-100 text-blue-800
+                            {% endif %}">
+                            {{ user.role.value|replace('_', ' ')|title }}
+                        </span>
+                    </td>
+                    <td class="border p-2">
+                        <span class="px-2 py-1 rounded-full text-xs 
+                            {% if user.is_active %}bg-green-100 text-green-800
+                            {% else %}bg-red-100 text-red-800{% endif %}">
+                            {{ "Active" if user.is_active else "Inactive" }}
+                        </span>
+                    </td>
+                    <td class="border p-2">
+                        {% if user.last_login %}
+                        {{ user.last_login.strftime('%Y-%m-%d') }}
+                        <div class="text-xs text-gray-500">{{ user.last_login.strftime('%H:%M') }}</div>
+                        {% else %}
+                        <span class="text-gray-400">Never</span>
+                        {% endif %}
+                    </td>
+                    <td class="border p-2">
+                        <div class="flex space-x-1">
+                            <a href="/admin/users/{{ user.id }}/edit" class="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700">
+                                Edit
+                            </a>
+                            
+                            {% if user.id != admin.id %}
+                            <form method="POST" action="/admin/users/{{ user.id }}/toggle-active" class="inline">
+                                <button type="submit" class="{% if user.is_active %}bg-yellow-600{% else %}bg-green-600{% endif %} text-white px-2 py-1 rounded text-xs hover:{% if user.is_active %}bg-yellow-700{% else %}bg-green-700{% endif %}">
+                                    {{ "Deactivate" if user.is_active else "Activate" }}
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="flex justify-between items-center mt-6">
+        <div>
+            Showing page {{ current_page }} of {{ total_pages }}
+            ({{ total_users }} total users)
+        </div>
+        
+        <div class="flex space-x-2">
+            {% if current_page > 1 %}
+            <a href="/admin/users?page={{ current_page - 1 }}" 
+               class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+                Previous
+            </a>
+            {% endif %}
+            
+            {% if current_page < total_pages %}
+            <a href="/admin/users?page={{ current_page + 1 }}" 
+               class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
+                Next
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {% else %}
+    <div class="text-center py-8">
+        <p class="text-gray-500 italic">No users found.</p>
+        <a href="/admin/users/new" class="mt-4 inline-block px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+            Create Your First User
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="bg-white rounded-lg shadow-md p-6">
+    <h2 class="text-xl font-bold mb-4">User Roles & Permissions</h2>
+    
+    <div class="space-y-4">
+        <div class="p-4 border rounded-lg bg-purple-50">
+            <h3 class="font-bold text-purple-800">Super Admin</h3>
+            <p class="text-sm mt-1">Full system access with the ability to:</p>
+            <ul class="list-disc list-inside text-sm mt-1 ml-2 text-gray-700">
+                <li>Manage all users (create, edit, delete)</li>
+                <li>Access all groups and their data</li>
+                <li>Configure system-wide settings</li>
+                <li>Access all orders and customers</li>
+            </ul>
+        </div>
+        
+        <div class="p-4 border rounded-lg bg-blue-50">
+            <h3 class="font-bold text-blue-800">Client Admin</h3>
+            <p class="text-sm mt-1">Standard administrative access with the ability to:</p>
+            <ul class="list-disc list-inside text-sm mt-1 ml-2 text-gray-700">
+                <li>Manage groups they are assigned to</li>
+                <li>Process orders related to their groups</li>
+                <li>Contact customers for their groups</li>
+                <li>Generate WhatsApp order links</li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="mt-4 p-4 bg-yellow-50 border-l-4 border-yellow-500 rounded">
+        <p class="font-medium">Security Note</p>
+        <p class="text-sm mt-1">
+            Only grant Super Admin access to trusted individuals. Super Admins have complete control over the system,
+            including the ability to create and manage other users.
+        </p>
+    </div>
+</div>
+{% endblock %}

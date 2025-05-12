@@ -1,6 +1,8 @@
 # app/routers/webhook.py
+import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from datetime import datetime
 from fastapi import APIRouter, Request, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -34,30 +36,75 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
     Process incoming webhook events from WhatsApp
     """
     try:
-        # Get the raw JSON data
         data = await request.json()
         logger.info(f"Received webhook data: {data}")
         
-        # Process the webhook event
+        # Process the webhook event data
         event_data = whatsapp_service.process_webhook_event(data)
+        logger.info(f"Processed event data: {event_data}")
+        
         if not event_data:
+            logger.warning("No event data extracted from webhook payload")
             return {"success": True, "message": "Event processed but no action taken"}
         
-        # Check if customer exists, create if not
+        # Get the phone number of the sender
+        phone_number = event_data.get("phone_number")
+        if not phone_number:
+            logger.warning("No phone number found in event data")
+            return {"success": False, "error": "Missing phone number"}
+        
+        # Look for the customer across all groups first
         customer = db.query(models.Customer).filter(
-            models.Customer.phone_number == event_data["phone_number"]
+            models.Customer.phone_number == phone_number
         ).first()
         
-        if not customer:
-            customer = models.Customer(
-                phone_number=event_data["phone_number"],
-                name=event_data["name"]
-            )
-            db.add(customer)
-            db.commit()
-            db.refresh(customer)
+        # Extract the message and its type
+        message = event_data.get("message", "").strip()
+        message_type = event_data.get("type")
         
-        # Handle the event based on message type or content
+        # Try to determine which group this customer belongs to
+        group_id = None
+        
+        # Check if this is the initial click-to-chat message which contains the group info
+        if message_type == "text" and message.startswith("order from group:"):
+            group_identifier = message.replace("order from group:", "").strip()
+            logger.info(f"Looking for group with identifier: {group_identifier}")
+            
+            group = db.query(models.Group).filter(
+                models.Group.identifier == group_identifier,
+                models.Group.is_active == True
+            ).first()
+            
+            if group:
+                group_id = group.id
+                
+                # If customer doesn't exist yet, create them
+                if not customer:
+                    customer = models.Customer(
+                        phone_number=phone_number,
+                        name=event_data.get("name", "New Customer"),
+                        group_id=group_id
+                    )
+                    db.add(customer)
+                    db.commit()
+                    db.refresh(customer)
+                    logger.info(f"Created new customer with ID {customer.id} for phone {phone_number}")
+                else:
+                    # If customer exists but has no group_id or belongs to a different group
+                    # We don't change their group - they might be ordering from multiple groups
+                    logger.info(f"Customer already exists with ID {customer.id}")
+        
+        # If we still don't have a customer record, we can't proceed
+        if not customer:
+            logger.warning(f"No customer found and couldn't create one. Sending help message to {phone_number}")
+            # Send a welcome message guiding them to use a proper link
+            welcome_msg = "👋 Welcome to our Order Bot!\n\n"
+            welcome_msg += "It seems you're trying to place an order, but we couldn't identify which business you're trying to order from.\n\n"
+            welcome_msg += "Please use the link that the business shared with you to start your order properly."
+            whatsapp_service.send_text_message(phone_number, welcome_msg)
+            return {"success": True, "message": "Sent help message to new customer"}
+        
+        # Now handle the customer's message appropriately
         await handle_customer_message(customer, event_data, db)
         
         return {"success": True, "message": "Webhook processed successfully"}
@@ -70,169 +117,254 @@ async def handle_customer_message(customer, event_data, db):
     Process the customer message and respond accordingly
     """
     phone_number = customer.phone_number
-    message = event_data.get("message", "").strip().lower()
+    message = event_data.get("message", "").strip()
     message_type = event_data.get("type")
     
-    # Check if this is a feedback response
-    if message_type == "button" and event_data.get("button_id", "").startswith("feedback_"):
-        feedback_type = event_data.get("button_id").replace("feedback_", "")
-        
-        # Store the feedback in the database (could add a Feedback model)
-        # For now, just acknowledge the feedback
-        thank_you_message = "Thank you for your feedback! We appreciate you taking the time to let us know."
-        whatsapp_service.send_text_message(phone_number, thank_you_message)
-        return
-        
-    # Check if this is the initial click-to-chat message
-    if message.startswith("order from group:"):
-        # This is the pre-filled identifier text from click-to-chat link
+    # Get the customer's group for context
+    group = db.query(models.Group).filter(models.Group.id == customer.group_id).first()
+    
+    # STEP 1: Handle the initial welcome/group identification message
+    if message_type == "text" and message.lower().startswith("order from group:"):
         group_identifier = message.replace("order from group:", "").strip()
+        group = db.query(models.Group).filter(models.Group.identifier == group_identifier).first()
         
-        # Look up the group from the database
-        group = db.query(models.Group).filter(
-            models.Group.identifier == group_identifier
-        ).first()
+        if not group:
+            whatsapp_service.send_text_message(
+                phone_number, 
+                "Sorry, we couldn't identify the business you're trying to order from. Please use the correct link."
+            )
+            return
         
-        # Default message if group not found
-        welcome_message = f"👋 Welcome to our Ordering Bot!\n\nWhat would you like to do today?"
+        # Send welcome message with quick options
+        welcome_message = f"👋 Welcome to {group.name}!\n\n"
+        
+        if group.welcome_message:
+            welcome_message += f"{group.welcome_message}\n\n"
+        
+        welcome_message += "How would you like to place your order?"
         
         buttons = [
-            {"id": "quick_order", "title": "Quick Order"},
-            {"id": "list_products", "title": "List Products"},
-            {"id": "help", "title": "Help"}
+            {"id": "place_order", "title": "Place Order"},
+            {"id": "track_order", "title": "Track My Order"},
+            {"id": "contact_support", "title": "Contact Support"}
         ]
-        
-        if group:
-            # Use custom welcome message if available
-            if group.welcome_message:
-                welcome_message = group.welcome_message
-            else:
-                welcome_message = f"👋 Welcome to our Ordering Bot!\n\nYou've connected through group: {group.name}. What would you like to do?"
-            
-            # If group has custom products, modify the button options
-            if group.products:
-                buttons = [
-                    {"id": "quick_order", "title": "Quick Order"},
-                    {"id": f"list_products_{group.id}", "title": "List Products"},
-                    {"id": "help", "title": "Help"}
-                ]
         
         whatsapp_service.send_quick_reply_buttons(phone_number, welcome_message, buttons)
         return
     
-    # Handle button responses
+    # STEP 2: Handle button responses
     if message_type == "button":
-        button_id = event_data.get("button_id")
+        button_id = event_data.get("button_id", "")
         
-        if button_id == "quick_order":
-            message = "Please tell us what you'd like to order. Just describe the items you want to purchase."
-            whatsapp_service.send_text_message(phone_number, message)
+        # Handle main menu options
+        if button_id == "place_order":
+            place_order_msg = "Please type your order details, including:\n\n"
+            place_order_msg += "- Item names\n- Quantities\n- Any special requests\n\n"
+            place_order_msg += "Example: 2 t-shirts size L, 1 hoodie black size XL"
+            
+            whatsapp_service.send_text_message(phone_number, place_order_msg)
             return
             
-        elif button_id == "list_products":
-            # In a real app, you would fetch products from database
-            products_message = "Here are our available products:\n\n" + \
-                              "1. Product A - $10\n" + \
-                              "2. Product B - $15\n" + \
-                              "3. Product C - $20"
+        elif button_id == "track_order":
+            # Find recent orders for this customer
+            recent_orders = db.query(models.Order).filter(
+                models.Order.customer_id == customer.id
+            ).order_by(models.Order.created_at.desc()).limit(3).all()
             
-            buttons = [
-                {"id": "order_productA", "title": "Order Product A"},
-                {"id": "order_productB", "title": "Order Product B"},
-                {"id": "order_productC", "title": "Order Product C"}
-            ]
+            if not recent_orders:
+                whatsapp_service.send_text_message(
+                    phone_number,
+                    "You don't have any recent orders. Would you like to place a new order?"
+                )
+                return
+                
+            # Display recent orders
+            orders_message = "📦 *Your Recent Orders*\n\n"
             
-            whatsapp_service.send_quick_reply_buttons(phone_number, products_message, buttons)
+            for order in recent_orders:
+                # Get emoji for order status
+                status_emoji = {
+                    models.OrderStatus.PENDING: "🕒",
+                    models.OrderStatus.PROCESSING: "⚙️",
+                    models.OrderStatus.COMPLETED: "✅",
+                    models.OrderStatus.CANCELLED: "❌",
+                    models.OrderStatus.REFUNDED: "💰"
+                }
+                
+                emoji = status_emoji.get(order.status, "")
+                
+                # Format order details
+                orders_message += f"{emoji} Order #{order.order_number}\n"
+                orders_message += f"Status: {order.status.value.capitalize()}\n"
+                orders_message += f"Date: {order.created_at.strftime('%Y-%m-%d %H:%M')}\n"
+                orders_message += f"Amount: ${order.total_amount:.2f}\n\n"
+            
+            whatsapp_service.send_text_message(phone_number, orders_message)
             return
             
-        elif button_id == "help":
-            help_message = "Need help? Here's how to use our ordering bot:\n\n" + \
-                          "1. Select 'Quick Order' to place an order directly\n" + \
-                          "2. Select 'List Products' to see what we offer\n\n" + \
-                          "If you need to speak with a human, reply with 'agent'."
+        elif button_id == "contact_support":
+            support_msg = "Need help with your order? You can contact support:\n\n"
             
-            whatsapp_service.send_text_message(phone_number, help_message)
+            if group and group.contact_phone:
+                support_msg += f"📞 Phone: {group.contact_phone}\n"
+                
+            if group and group.contact_email:
+                support_msg += f"📧 Email: {group.contact_email}\n"
+            else:
+                support_msg += "📧 Email: support@example.com\n"
+                
+            support_msg += "\nOr reply with your question and we'll get back to you soon!"
+            
+            whatsapp_service.send_text_message(phone_number, support_msg)
+            return
+        
+        # Handle payment options
+        elif button_id == "pay_mpesa":
+            mpesa_msg = "Please send your payment to our M-Pesa number and then share the transaction message/code/confirmation with us."
+            whatsapp_service.send_text_message(phone_number, mpesa_msg)
             return
             
-        elif button_id.startswith("order_product"):
-            # Handle product order button clicks
-            product = button_id.replace("order_product", "")
+        elif button_id == "pay_cash":
+            # Update the most recent pending order to cash on delivery
+            last_order = db.query(models.Order).filter(
+                models.Order.customer_id == customer.id,
+                models.Order.status == models.OrderStatus.PENDING
+            ).order_by(models.Order.created_at.desc()).first()
             
-            # Create a new order
+            if last_order:
+                last_order.payment_method = models.PaymentMethod.CASH_ON_DELIVERY
+                db.commit()
+                
+                # Send confirmation
+                whatsapp_service.send_payment_confirmation(
+                    phone_number,
+                    {
+                        "method": "cash",
+                        "order_number": last_order.order_number
+                    }
+                )
+            else:
+                whatsapp_service.send_text_message(
+                    phone_number,
+                    "Sorry, we couldn't find a pending order to update. Please place a new order first."
+                )
+            return
+            
+        elif button_id == "cancel_order":
+            # Find the customer's last pending order
+            last_order = db.query(models.Order).filter(
+                models.Order.customer_id == customer.id,
+                models.Order.status == models.OrderStatus.PENDING
+            ).order_by(models.Order.created_at.desc()).first()
+            
+            if last_order:
+                last_order.status = models.OrderStatus.CANCELLED
+                db.commit()
+                whatsapp_service.send_text_message(
+                    phone_number, 
+                    f"Your order #{last_order.order_number} has been cancelled. We hope to serve you again soon!"
+                )
+            else:
+                whatsapp_service.send_text_message(
+                    phone_number,
+                    "You don't have any pending orders to cancel."
+                )
+            return
+            
+        # Handle feedback buttons
+        elif button_id.startswith("feedback_"):
+            feedback_type = button_id.replace("feedback_", "")
+            
+            # You could store this feedback in a database table
+            thank_you_message = "Thank you for your feedback! We appreciate you taking the time to let us know."
+            whatsapp_service.send_text_message(phone_number, thank_you_message)
+            return
+    
+    # STEP 3: Handle M-Pesa transaction codes
+    # Basic pattern matching for M-Pesa transaction codes (usually 10 characters)
+    if message_type == "text" and (
+            (len(message) >= 8 and len(message) <= 12 and message.isalnum()) or
+            message.upper().startswith("M-PESA") or
+            "TRANSACTION" in message.upper()
+    ):
+        # Extract what might be the transaction code
+        transaction_code = message.upper()
+        if "TRANSACTION" in transaction_code:
+            # Try to extract just the code from messages like "M-PESA TRANSACTION AB12345678"
+            import re
+            match = re.search(r'[A-Z0-9]{8,12}', transaction_code)
+            if match:
+                transaction_code = match.group(0)
+        
+        # Find the customer's most recent pending order
+        last_order = db.query(models.Order).filter(
+            models.Order.customer_id == customer.id,
+            models.Order.status == models.OrderStatus.PENDING
+        ).order_by(models.Order.created_at.desc()).first()
+        
+        if last_order:
+            # Update the order with payment information
+            last_order.payment_method = models.PaymentMethod.MPESA
+            last_order.payment_ref = transaction_code
+            last_order.payment_status = models.PaymentStatus.PAID  # Mark as paid but not verified
+            db.commit()
+            
+            # Send confirmation
+            whatsapp_service.send_payment_confirmation(
+                phone_number,
+                {
+                    "method": "mpesa",
+                    "order_number": last_order.order_number,
+                    "payment_ref": transaction_code
+                }
+            )
+        else:
+            whatsapp_service.send_text_message(
+                phone_number,
+                "Thank you for the payment information, but we couldn't find a pending order. Please place an order first."
+            )
+        return
+    
+    # STEP 4: Handle order placement from text
+    if message_type == "text" and len(message) > 10 and not message.startswith("order from group:"):
+        try:
+            # Create a new order with the text as details
             order = models.Order(
                 customer_id=customer.id,
-                order_details=f"Product {product}",
-                status="pending",
-                total_amount=10.0 if product == "A" else (15.0 if product == "B" else 20.0)
+                group_id=customer.group_id,
+                order_details=message,
+                status=models.OrderStatus.PENDING,
+                total_amount=0.00  # This will be updated by the admin later
             )
             
             db.add(order)
             db.commit()
             db.refresh(order)
             
-            # Send order confirmation
-            order_details = {
-                "order_id": order.id,
-                "items": f"Product {product} x 1",
-                "total": order.total_amount
-            }
-            
-            whatsapp_service.send_order_confirmation(phone_number, order_details)
-            
-            # Ask if they want to add anything else
-            follow_up_message = "Is there anything else you'd like to order?"
-            
-            buttons = [
-                {"id": "order_more", "title": "Order More"},
-                {"id": "checkout", "title": "Checkout"}
-            ]
-            
-            whatsapp_service.send_quick_reply_buttons(phone_number, follow_up_message, buttons)
-            return
-    
-    # Handle text input for quick order
-    if message and len(message) > 3 and not message.startswith("order from group:"):
-        # Create a new order from the text message
-        order = models.Order(
-            customer_id=customer.id,
-            order_details=message,
-            status="pending",
-            # Placeholder amount - in a real app, you would calculate based on items
-            total_amount=25.0
-        )
-        
-        db.add(order)
-        db.commit()
-        db.refresh(order)
-        
-        # Send order confirmation
-        order_details = {
-            "order_id": order.id,
-            "items": message[:50] + "..." if len(message) > 50 else message,
-            "total": order.total_amount
-        }
-        
-        whatsapp_service.send_order_confirmation(phone_number, order_details)
-        
-        # Provide follow-up options
-        follow_up_message = "Thank you for your order! What would you like to do next?"
-        
-        buttons = [
-            {"id": "checkout", "title": "Checkout"},
-            {"id": "track_order", "title": "Track Order"},
-            {"id": "cancel_order", "title": "Cancel Order"}
-        ]
-        
-        whatsapp_service.send_quick_reply_buttons(phone_number, follow_up_message, buttons)
+            # Send confirmation with payment options
+            whatsapp_service.send_order_confirmation(
+                phone_number,
+                {
+                    "order_number": order.order_number,
+                    "items": message,
+                    "total_amount": order.total_amount  
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error creating order: {str(e)}")
+            whatsapp_service.send_text_message(
+                phone_number,
+                "Sorry, we couldn't process your order. Please try again or contact support."
+            )
         return
     
-    # Default response for unrecognized messages
+    # STEP 5: Default response for unrecognized messages
     default_message = "I'm not sure what you're asking. Please choose an option below:"
     
     buttons = [
-        {"id": "quick_order", "title": "Quick Order"},
-        {"id": "list_products", "title": "List Products"},
-        {"id": "help", "title": "Help"}
+        {"id": "place_order", "title": "Place Order"},
+        {"id": "track_order", "title": "Track My Order"},
+        {"id": "contact_support", "title": "Contact Support"}
     ]
     
     whatsapp_service.send_quick_reply_buttons(phone_number, default_message, buttons)

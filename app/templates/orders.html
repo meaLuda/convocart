@@ -24,6 +24,9 @@
             <a href="/admin/orders?status=cancelled" class="px-3 py-1 bg-red-100 rounded hover:bg-red-200 {% if status_filter == 'cancelled' %}font-bold{% endif %}">
                 Cancelled
             </a>
+            <a href="/admin/orders?status=refunded" class="px-3 py-1 bg-purple-100 rounded hover:bg-purple-200 {% if status_filter == 'refunded' %}font-bold{% endif %}">
+                Refunded
+            </a>
         </div>
     </div>
     
@@ -56,12 +59,13 @@
                     <td class="border p-2">{{ order.order_details[:50] }}{% if order.order_details|length > 50 %}...{% endif %}</td>
                     <td class="border p-2">
                         <span class="px-2 py-1 rounded-full text-xs 
-                            {% if order.status == 'pending' %}bg-yellow-100 text-yellow-800
-                            {% elif order.status == 'processing' %}bg-blue-100 text-blue-800
-                            {% elif order.status == 'completed' %}bg-green-100 text-green-800
-                            {% elif order.status == 'cancelled' %}bg-red-100 text-red-800
+                            {% if order.status.value == 'pending' %}bg-yellow-100 text-yellow-800
+                            {% elif order.status.value == 'processing' %}bg-blue-100 text-blue-800
+                            {% elif order.status.value == 'completed' %}bg-green-100 text-green-800
+                            {% elif order.status.value == 'cancelled' %}bg-red-100 text-red-800
+                            {% elif order.status.value == 'refunded' %}bg-purple-100 text-purple-800
                             {% endif %}">
-                            {{ order.status }}
+                            {{ order.status.value }}
                         </span>
                     </td>
                     <td class="border p-2">${{ "%.2f"|format(order.total_amount) }}</td>
@@ -70,10 +74,11 @@
                         <form method="POST" action="/admin/orders/{{ order.id }}/status" class="flex flex-col space-y-2">
                             <div class="flex space-x-1">
                                 <select name="status" class="text-sm border rounded px-2 py-1">
-                                    <option value="pending" {% if order.status == 'pending' %}selected{% endif %}>Pending</option>
-                                    <option value="processing" {% if order.status == 'processing' %}selected{% endif %}>Processing</option>
-                                    <option value="completed" {% if order.status == 'completed' %}selected{% endif %}>Completed</option>
-                                    <option value="cancelled" {% if order.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                                    {% for status in order_statuses %}
+                                    <option value="{{ status }}" {% if order.status.value == status %}selected{% endif %}>
+                                        {{ status|title }}
+                                    </option>
+                                    {% endfor %}
                                 </select>
                                 <button type="submit" class="bg-blue-600 text-white px-2 py-1 rounded text-sm hover:bg-blue-700">
                                     Update

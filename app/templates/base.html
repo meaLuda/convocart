@@ -22,6 +22,11 @@
                     <i class="fab fa-whatsapp text-2xl"></i>
                     <span class="font-heading font-bold text-xl">WA Order Bot</span>
                 </a>
+                {% if not admin %}
+                <a href="/admin/login" class="flex justify-end items-center space-x-2">
+                    <span class="font-heading font-bold text-xl">login</span>
+                </a>
+                {% endif %}
                 
                 {% if admin %}
                 <nav class="hidden md:flex space-x-6">
@@ -32,6 +37,20 @@
                     <a href="/admin/orders" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path == '/admin/orders' else '' }}">
                         <i class="fas fa-shopping-cart"></i>
                         <span>Orders</span>
+                    </a>
+                    <a href="/admin/groups" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path.startswith('/admin/groups') else '' }}">
+                        <i class="fas fa-users"></i>
+                        <span>Groups</span>
+                    </a>
+                    {% if admin.role == 'super_admin' %}
+                    <a href="/admin/users" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path.startswith('/admin/users') else '' }}">
+                        <i class="fas fa-user-cog"></i>
+                        <span>Users</span>
+                    </a>
+                    {% endif %}
+                    <a href="/admin/settings" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path == '/admin/settings' else '' }}">
+                        <i class="fas fa-cog"></i>
+                        <span>Settings</span>
                     </a>
                     <a href="/admin/logout" class="flex items-center space-x-1 hover:text-white/80 transition-colors">
                         <i class="fas fa-sign-out-alt"></i>
@@ -58,6 +77,20 @@
                         <i class="fas fa-shopping-cart w-5"></i>
                         <span>Orders</span>
                     </a>
+                    <a href="/admin/groups" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path.startswith('/admin/groups') else '' }}">
+                        <i class="fas fa-users w-5"></i>
+                        <span>Groups</span>
+                    </a>
+                    {% if admin.role == 'super_admin' %}
+                    <a href="/admin/users" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path.startswith('/admin/users') else '' }}">
+                        <i class="fas fa-user-cog w-5"></i>
+                        <span>Users</span>
+                    </a>
+                    {% endif %}
+                    <a href="/admin/settings" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path == '/admin/settings' else '' }}">
+                        <i class="fas fa-cog w-5"></i>
+                        <span>Settings</span>
+                    </a>
                     <a href="/admin/logout" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600">
                         <i class="fas fa-sign-out-alt w-5"></i>
                         <span>Logout</span>
@@ -82,6 +115,11 @@
                     </div>
                     <p class="text-sm mt-1 text-center md:text-left">&copy; 2025 All rights reserved.</p>
                 </div>
+                {% if admin %}
+                <div class="text-sm">
+                    <span>Logged in as: <strong>{{ admin.username }}</strong> ({{ admin.role.value }})</span>
+                </div>
+                {% endif %}
             </div>
         </div>
     </footer>
