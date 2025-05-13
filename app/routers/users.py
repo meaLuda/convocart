@@ -50,16 +50,10 @@ async def get_current_admin(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid authentication credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    
     # Get token from cookie
     token = request.cookies.get("access_token")
     if not token:
-        raise credentials_exception
+        return RedirectResponse(url="/admin/login", status_code=303)
     
     # Remove "Bearer " prefix if present
     if token.startswith("Bearer "):
@@ -69,13 +63,13 @@ async def get_current_admin(
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
-            raise credentials_exception
+            return RedirectResponse(url="/admin/login", status_code=303)
     except JWTError:
-        raise credentials_exception
+        return RedirectResponse(url="/admin/login", status_code=303)
     
     user = db.query(models.User).filter(models.User.username == username).first()
     if user is None or user.role not in [models.UserRole.CLIENT_ADMIN, models.UserRole.SUPER_ADMIN]:
-        raise credentials_exception
+        return RedirectResponse(url="/admin/login", status_code=303)
     
     return user
 
@@ -158,8 +152,11 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     """
     # Get the current admin user from the cookie
     current_admin = await get_current_admin(request, db)
-    if not current_admin:
-        raise RedirectResponse(url="/admin/login", status_code=303)
+    if isinstance(current_admin, RedirectResponse):
+        return current_admin
+    # If a redirect was returned, return it
+    if isinstance(current_admin, RedirectResponse):
+        return current_admin
     
     # Add debugging logs
     logger.info(f"Dashboard: User {current_admin.username}, role: {current_admin.role}")
@@ -225,8 +222,8 @@ async def view_orders(
     """
     # Get the current admin user from the cookie
     current_admin = await get_current_admin(request, db)
-    if not current_admin:
-        raise RedirectResponse(url="/admin/login", status_code=303)
+    if isinstance(current_admin, RedirectResponse):
+        return current_admin
     # Add debugging logs
     logger.info(f"Orders view: User {current_admin.username}, role: {current_admin.role}")
     group_ids = [group.id for group in current_admin.groups]
@@ -314,8 +311,8 @@ async def update_order_status(
 ):
     # Get the current admin user
     current_admin = await get_current_admin(request, db)
-    if not current_admin:
-        raise RedirectResponse(url="/admin/login", status_code=303)
+    if isinstance(current_admin, RedirectResponse):
+        return current_admin
     
     # Get the order
     order = db.query(models.Order).filter(models.Order.id == order_id).first()
@@ -425,8 +422,8 @@ async def list_groups(
     """
     # Get the current admin user from the cookie
     current_admin = await get_current_admin(request, db)
-    if not current_admin:
-        raise RedirectResponse(url="/admin/login", status_code=303)
+    if isinstance(current_admin, RedirectResponse):
+        return current_admin
     # Number of groups per page
     page_size = 20
     
@@ -501,7 +498,6 @@ async def new_group_form(
     )
 
 # Helper functions for handling JSON with SQLite
-
 def parse_json_from_db(json_str):
     """Parse a JSON string from the database into a Python object.
     Returns an empty dict/list if the input is None or invalid.
@@ -546,7 +542,8 @@ async def create_group(
     """
     # Get the current admin user
     current_admin = await get_current_admin(request, db)
-    
+    if isinstance(current_admin, RedirectResponse):
+        return current_admin
     # Check if identifier already exists
     existing = db.query(models.Group).filter(models.Group.identifier == identifier).first()
     if existing:
@@ -629,7 +626,8 @@ async def edit_group_form(
     """
     # Get the current admin user
     current_admin = await get_current_admin(request, db)
-    
+    if isinstance(current_admin, RedirectResponse):
+        return current_admin
     # Get the group
     group = db.query(models.Group).filter(models.Group.id == group_id).first()
     if not group:
@@ -667,7 +665,8 @@ async def delete_group(
     """
     # Get the current admin user
     current_admin = await get_current_admin(request, db)
-    
+    if isinstance(current_admin, RedirectResponse):
+        return current_admin
     # Get the group
     group = db.query(models.Group).filter(models.Group.id == group_id).first()
     if not group:
@@ -755,7 +754,8 @@ async def link_generator(
     try:
         # Get the current admin user
         current_admin = await get_current_admin(request, db)
-        
+        if isinstance(current_admin, RedirectResponse):
+            return current_admin
         # Filter groups based on admin role
         if current_admin.role != models.UserRole.SUPER_ADMIN:
             groups = db.query(models.Group).filter(

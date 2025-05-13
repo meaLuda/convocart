@@ -40,6 +40,8 @@ markupsafe==3.0.2
     #   mako
 passlib==1.7.4
     # via orderbot
+psycopg2-binary==2.9.10
+    # via orderbot
 pyasn1==0.4.8
     # via
     #   python-jose
