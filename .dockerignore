@@ -1,0 +1,54 @@
+# .dockerignore file
+
+# Git related
+.git
+.gitignore
+.github
+
+# Virtual environments
+venv
+.venv
+
+# Database files (SQLite should be created inside the container)
+*.db
+*.sqlite3
+
+# Python cache files
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache
+.coverage
+htmlcov
+
+# Node modules
+node_modules
+npm-debug.log
+
+# Build files
+build
+dist
+*.egg-info
+
+# Docker files (not needed inside the Docker image)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Development and misc files
+.idea
+.vscode
+*.swp
+*.swo
+*.swn
+*.log
+.DS_Store
+
+# Documentation
+docs
+
+# Test files
+test
+tests
