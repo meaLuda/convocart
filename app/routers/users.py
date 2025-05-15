@@ -331,22 +331,6 @@ async def update_order_status(
         group_ids = [group.id for group in current_admin.groups]
         if order.group_id not in group_ids:
             raise HTTPException(status_code=403, detail="You don't have permission to update this order")
-        
-    from app.services.whatsapp import WhatsAppService
-    
-    order = db.query(models.Order).filter(models.Order.id == order_id).first()
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    
-    # Get previous status for change detection
-    previous_status = order.status
-    
-    try:
-        # Update the order status using enum
-        order.status = models.OrderStatus(status)
-        db.commit()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid order status")
     
     # Get previous status for change detection
     previous_status = order.status
@@ -373,8 +357,10 @@ async def update_order_status(
         # Get customer information
         customer = db.query(models.Customer).filter(models.Customer.id == order.customer_id).first()
         if customer:
-            # Initialize WhatsApp service
-            whatsapp_service = WhatsAppService()
+            # Import the WhatsApp service directly and initialize with DB session
+            # This ensures it gets the token from the database
+            from app.services.whatsapp import WhatsAppService
+            whatsapp_service = WhatsAppService(db)
             
             # Create status update message
             status_messages = {
@@ -851,6 +837,64 @@ async def reload_whatsapp_config(
             "success": False,
             "message": f"Error reloading configuration: {str(e)}"
         })
+
+
+@router.post("/admin/test-whatsapp-connection")
+async def test_whatsapp_connection(
+    request: Request,
+    current_admin: models.User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Test WhatsApp connection by sending a test message
+    """
+    # Only super admins can test the connection
+    if current_admin.role != models.UserRole.SUPER_ADMIN:
+        return JSONResponse(status_code=403, content={
+            "success": False,
+            "message": "Only super admins can test WhatsApp connection"
+        })
+    
+    try:
+        # Get request data
+        data = await request.json()
+        phone_number = data.get("phone_number")
+        
+        if not phone_number:
+            return JSONResponse(status_code=400, content={
+                "success": False,
+                "message": "Phone number is required"
+            })
+        
+        # Create a WhatsApp service instance with database configuration
+        from app.services.whatsapp import WhatsAppService
+        whatsapp_service = WhatsAppService(db)
+        
+        # Send a test message
+        test_message = "🧪 This is a test message from your WhatsApp Order Bot. If you received this, your API configuration is working correctly! Time: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        result = whatsapp_service.send_text_message(phone_number, test_message)
+        
+        # Check for errors in the result
+        if "error" in result:
+            return JSONResponse(status_code=400, content={
+                "success": False,
+                "message": f"Error sending test message: {result.get('error')}"
+            })
+        
+        logger.info(f"Successfully sent test message to {phone_number}")
+        
+        return JSONResponse(content={
+            "success": True,
+            "message": "Test message sent successfully"
+        })
+    except Exception as e:
+        logger.error(f"Error testing WhatsApp connection: {str(e)}")
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "message": f"Error testing connection: {str(e)}"
+        })
+    
 
 @router.get("/admin/groups/link-generator", response_class=HTMLResponse)
 async def link_generator(
