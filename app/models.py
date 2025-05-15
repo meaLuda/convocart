@@ -222,9 +222,6 @@ class Order(Base, TimestampMixin):
     payment_ref = Column(String(50), nullable=True)     # Payment reference/transaction code i.e MPESA code
     payment_status = Column(Enum(PaymentStatus), default=PaymentStatus.UNPAID, nullable=False)
     
-    last_notification_sent = Column(DateTime, nullable=True)
-    notification_count = Column(Integer, default=0)
-    
     # Relationships
     customer = relationship("Customer", back_populates="orders")
     group = relationship("Group", back_populates="orders")
@@ -239,25 +236,6 @@ class Order(Base, TimestampMixin):
         timestamp = datetime.utcnow().strftime('%Y%m%d')
         random_part = ''.join(secrets.choice(string.digits) for _ in range(4))
         return f"ORD-{timestamp}-{random_part}"
-
-    def can_send_notification(self):
-        """Check if a notification can be sent (prevent duplicates)"""
-        # If never notified, allow it
-        if not self.last_notification_sent:
-            return True
-            
-        # Don't allow more than 3 notifications per order
-        if self.notification_count >= 3:
-            return False
-            
-        # Prevent notifications within 1 minute of each other
-        time_since_last = datetime.utcnow() - self.last_notification_sent
-        return time_since_last > timedelta(minutes=1)
-    
-    def record_notification(self):
-        """Record that a notification was sent"""
-        self.last_notification_sent = datetime.utcnow()
-        self.notification_count = (self.notification_count or 0) + 1
 
 
 class ConversationState(str, Enum):

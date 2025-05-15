@@ -169,37 +169,9 @@ async def handle_customer_message_with_context(customer, event_data, db, current
             session.update_state(ConversationState.IDLE)
             db.commit()
     
-    # Check if customer has completed orders that are being referenced
-    has_completed_order = False
-    recent_completed_order = None
-    
-    # Check if the context includes a reference to a specific order
-    referenced_order_id = context.get("current_order_id") if context else None
-    
-    if referenced_order_id:
-        # Check if the referenced order is completed
-        referenced_order = db.query(models.Order).filter(
-            models.Order.id == referenced_order_id,
-            models.Order.customer_id == customer.id
-        ).first()
-        
-        if referenced_order and referenced_order.status == models.OrderStatus.COMPLETED:
-            has_completed_order = True
-            recent_completed_order = referenced_order
-    
-    # If no specific order is referenced in context, check if the most recent order is completed
-    if not has_completed_order:
-        recent_order = db.query(models.Order).filter(
-            models.Order.customer_id == customer.id
-        ).order_by(models.Order.created_at.desc()).first()
-        
-        if recent_order and recent_order.status == models.OrderStatus.COMPLETED:
-            has_completed_order = True
-            recent_completed_order = recent_order
-    
     # STEP 2: Handle primary menu options and commands
-    # Detect intent from message or button press - pass the completed order flag
-    intent = detect_customer_intent(message, message_type, button_id, current_state, has_completed_order)
+    # Detect intent from message or button press
+    intent = detect_customer_intent(message, message_type, button_id, current_state)
     
     # Handle detected intent
     if intent == "place_order":
@@ -210,8 +182,6 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         
         whatsapp_service.send_text_message(phone_number, place_order_msg)
         session.update_state(ConversationState.AWAITING_ORDER_DETAILS)
-        # Clear any previous order from context
-        session.update_context({"current_order_id": None})
         db.commit()
         return
         
@@ -224,14 +194,14 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         
     elif intent == "cancel_order":
         # User wants to cancel an order
-        await handle_cancel_order(phone_number, customer.id, db, whatsapp_service)
+        whatsapp_service.handle_cancel_order(phone_number, customer.id, db, whatsapp_service)
         session.update_state(ConversationState.IDLE)
         db.commit()
         return
         
     elif intent == "contact_support":
         # User wants to contact support
-        await handle_contact_support(phone_number, group, whatsapp_service)
+        whatsapp_service.handle_contact_support(phone_number, group, whatsapp_service)
         session.update_state(ConversationState.WAITING_FOR_SUPPORT)
         db.commit()
         return
@@ -246,19 +216,7 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         
     elif intent == "cash_payment":
         # User wants to pay with cash on delivery
-        await handle_cash_payment(phone_number, customer.id, db, whatsapp_service)
-        session.update_state(ConversationState.IDLE)
-        db.commit()
-        return
-    
-    elif intent == "invalid_payment_for_completed":
-        # Special case - user tried to change payment on a completed order
-        error_msg = "Your order has already been completed and cannot have its payment method changed."
-        error_msg += "\n\nIf you'd like to place a new order, please select 'Place Order'."
-        whatsapp_service.send_text_message(phone_number, error_msg)
-        
-        # Provide new order options after a short delay
-        send_default_options(phone_number, whatsapp_service)
+        whatsapp_service.handle_cash_payment(phone_number, customer.id, db, whatsapp_service)
         session.update_state(ConversationState.IDLE)
         db.commit()
         return
@@ -267,10 +225,7 @@ async def handle_customer_message_with_context(customer, event_data, db, current
     if current_state == ConversationState.AWAITING_ORDER_DETAILS:
         # User is providing order details
         if message_type == "text" and len(message) > 5:
-            new_order = await create_order(phone_number, customer.id, group_id, message, db, whatsapp_service)
-            if new_order:
-                # Save the order ID in conversation context
-                session.update_context({"current_order_id": new_order.id})
+            await create_order(phone_number, customer.id, group_id, message, db, whatsapp_service)
             session.update_state(ConversationState.AWAITING_PAYMENT)
             db.commit()
             return
@@ -284,20 +239,8 @@ async def handle_customer_message_with_context(customer, event_data, db, current
     
     elif current_state == ConversationState.AWAITING_PAYMENT_CONFIRMATION:
         # User is providing payment confirmation
-        # Check if the order they're trying to pay for is already completed
-        if has_completed_order and recent_completed_order:
-            whatsapp_service.send_text_message(
-                phone_number,
-                f"Your order #{recent_completed_order.order_number} has already been completed. "
-                "If you'd like to place a new order, please select 'Place Order'."
-            )
-            send_default_options(phone_number, whatsapp_service)
-            session.update_state(ConversationState.IDLE)
-            db.commit()
-            return
-            
         if is_mpesa_message(message, message_type):
-            await handle_mpesa_confirmation(phone_number, customer.id, message, db, whatsapp_service)
+            whatsapp_service.handle_mpesa_confirmation(phone_number, customer.id, message, db, whatsapp_service)
             session.update_state(ConversationState.IDLE)
             db.commit()
             return
@@ -446,7 +389,7 @@ def send_default_options(phone_number, whatsapp_service):
     whatsapp_service.send_quick_reply_buttons(phone_number, default_message, buttons)
 
 async def handle_track_order(phone_number, customer_id, db, whatsapp_service: WhatsAppService):
-    """Handle order tracking request with enhanced details using status template"""
+    """Handle order tracking request with consolidated details in a single message"""
     # Find recent orders for this customer
     recent_orders = db.query(models.Order).filter(
         models.Order.customer_id == customer_id
@@ -459,9 +402,11 @@ async def handle_track_order(phone_number, customer_id, db, whatsapp_service: Wh
         )
         return
     
-    # For each order, send a separate, detailed status update
-    # This gives the customer a complete view of each order
-    for order in recent_orders:
+    # Create a single consolidated message for all orders
+    consolidated_message = "📋 *YOUR RECENT ORDERS*\n\n"
+    
+    # Add each order to the consolidated message
+    for i, order in enumerate(recent_orders, 1):
         # Get group name
         group_name = "Our store"
         if order.group_id:
@@ -469,28 +414,52 @@ async def handle_track_order(phone_number, customer_id, db, whatsapp_service: Wh
             if group:
                 group_name = group.name
         
-        # Create order data dictionary for the template
-        order_data = {
-            "order_number": order.order_number,
-            "status": order.status.value,
-            "group_name": group_name,
-            "total_amount": order.total_amount,
-            "created_at": order.created_at.strftime('%Y-%m-%d %H:%M'),
-            "order_details": order.order_details
+        # Status emoji mapping
+        status_emoji = {
+            'pending': '🕒',
+            'processing': '⚙️',
+            'completed': '✅',
+            'cancelled': '❌',
+            'refunded': '💰'
         }
         
-        # Add payment information if available
-        if order.payment_method:
-            order_data["payment_method"] = order.payment_method.value.replace('_', ' ').title()
-            
-            if order.payment_status:
-                order_data["payment_status"] = order.payment_status.value.title()
-                
-            if order.payment_ref:
-                order_data["payment_ref"] = order.payment_ref
+        emoji = status_emoji.get(order.status.value.lower(), '')
         
-        # Send detailed order status update for this order
-        whatsapp_service.send_order_status_update(phone_number, order_data)
+        # Add order header with separator if not the first order
+        if i > 1:
+            consolidated_message += "\n\n" + ("-" * 30) + "\n\n"
+            
+        consolidated_message += f"{emoji} *Order #{order.order_number}*\n"
+        consolidated_message += f"Status: {order.status.value.title()}\n"
+        consolidated_message += f"Store: {group_name}\n"
+        consolidated_message += f"Date: {order.created_at.strftime('%Y-%m-%d %H:%M')}\n"
+        
+        if order.total_amount > 0:
+            consolidated_message += f"Amount: KSH {order.total_amount:.2f}\n"
+        
+        # Payment information
+        if hasattr(order, 'payment_method') and order.payment_method:
+            payment_method = order.payment_method.value.replace('_', ' ').title()
+            consolidated_message += f"Payment Method: {payment_method}\n"
+            
+            if hasattr(order, 'payment_status') and order.payment_status:
+                payment_status = order.payment_status.value.title()
+                consolidated_message += f"Payment Status: {payment_status}\n"
+                
+            if hasattr(order, 'payment_ref') and order.payment_ref:
+                consolidated_message += f"Reference: {order.payment_ref}\n"
+        
+        # Order items preview (shortened)
+        if order.order_details:
+            consolidated_message += f"\nItems: {order.order_details[:50]}"
+            if len(order.order_details) > 50:
+                consolidated_message += "..."
+    
+    # Add footer
+    consolidated_message += "\n\nTo place a new order, type 'Place Order'."
+    
+    # Send the consolidated message
+    whatsapp_service.send_text_message(phone_number, consolidated_message)
 
 async def handle_cancel_order(phone_number, customer_id, db, whatsapp_service):
     """Handle order cancellation request"""
@@ -615,10 +584,7 @@ async def create_order(phone_number, customer_id, group_id, message, db, whatsap
             group_id=group_id,
             order_details=message,
             status=models.OrderStatus.PENDING,
-            total_amount=0.00,  # This will be updated by the admin later
-            # Initialize notification tracking fields
-            notification_count=0,
-            last_notification_sent=None
+            total_amount=0.00  # This will be updated by the admin later
         )
         
         db.add(order)
@@ -645,13 +611,9 @@ async def create_order(phone_number, customer_id, group_id, message, db, whatsap
                 "group_name": group_name  
             }
         )
-        
-        # Return the created order
-        return order
     except Exception as e:
         logger.error(f"Error creating order: {str(e)}")
         whatsapp_service.send_text_message(
             phone_number,
             "Sorry, we couldn't process your order. Please try again or contact support."
         )
-        return None
