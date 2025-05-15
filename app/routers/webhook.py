@@ -194,14 +194,14 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         
     elif intent == "cancel_order":
         # User wants to cancel an order
-        whatsapp_service.handle_cancel_order(phone_number, customer.id, db, whatsapp_service)
+        await handle_cancel_order(phone_number, customer.id, db, whatsapp_service)
         session.update_state(ConversationState.IDLE)
         db.commit()
         return
         
     elif intent == "contact_support":
         # User wants to contact support
-        whatsapp_service.handle_contact_support(phone_number, group, whatsapp_service)
+        await handle_contact_support(phone_number, group, whatsapp_service)
         session.update_state(ConversationState.WAITING_FOR_SUPPORT)
         db.commit()
         return
@@ -216,7 +216,7 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         
     elif intent == "cash_payment":
         # User wants to pay with cash on delivery
-        whatsapp_service.handle_cash_payment(phone_number, customer.id, db, whatsapp_service)
+        await handle_cash_payment(phone_number, customer.id, db, whatsapp_service)
         session.update_state(ConversationState.IDLE)
         db.commit()
         return
@@ -240,7 +240,7 @@ async def handle_customer_message_with_context(customer, event_data, db, current
     elif current_state == ConversationState.AWAITING_PAYMENT_CONFIRMATION:
         # User is providing payment confirmation
         if is_mpesa_message(message, message_type):
-            whatsapp_service.handle_mpesa_confirmation(phone_number, customer.id, message, db, whatsapp_service)
+            await handle_mpesa_confirmation(phone_number, customer.id, message, db, whatsapp_service)
             session.update_state(ConversationState.IDLE)
             db.commit()
             return
