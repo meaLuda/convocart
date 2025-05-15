@@ -169,9 +169,37 @@ async def handle_customer_message_with_context(customer, event_data, db, current
             session.update_state(ConversationState.IDLE)
             db.commit()
     
+    # Check if customer has completed orders that are being referenced
+    has_completed_order = False
+    recent_completed_order = None
+    
+    # Check if the context includes a reference to a specific order
+    referenced_order_id = context.get("current_order_id") if context else None
+    
+    if referenced_order_id:
+        # Check if the referenced order is completed
+        referenced_order = db.query(models.Order).filter(
+            models.Order.id == referenced_order_id,
+            models.Order.customer_id == customer.id
+        ).first()
+        
+        if referenced_order and referenced_order.status == models.OrderStatus.COMPLETED:
+            has_completed_order = True
+            recent_completed_order = referenced_order
+    
+    # If no specific order is referenced in context, check if the most recent order is completed
+    if not has_completed_order:
+        recent_order = db.query(models.Order).filter(
+            models.Order.customer_id == customer.id
+        ).order_by(models.Order.created_at.desc()).first()
+        
+        if recent_order and recent_order.status == models.OrderStatus.COMPLETED:
+            has_completed_order = True
+            recent_completed_order = recent_order
+    
     # STEP 2: Handle primary menu options and commands
-    # Detect intent from message or button press
-    intent = detect_customer_intent(message, message_type, button_id, current_state)
+    # Detect intent from message or button press - pass the completed order flag
+    intent = detect_customer_intent(message, message_type, button_id, current_state, has_completed_order)
     
     # Handle detected intent
     if intent == "place_order":
@@ -182,6 +210,8 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         
         whatsapp_service.send_text_message(phone_number, place_order_msg)
         session.update_state(ConversationState.AWAITING_ORDER_DETAILS)
+        # Clear any previous order from context
+        session.update_context({"current_order_id": None})
         db.commit()
         return
         
@@ -221,11 +251,26 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         db.commit()
         return
     
+    elif intent == "invalid_payment_for_completed":
+        # Special case - user tried to change payment on a completed order
+        error_msg = "Your order has already been completed and cannot have its payment method changed."
+        error_msg += "\n\nIf you'd like to place a new order, please select 'Place Order'."
+        whatsapp_service.send_text_message(phone_number, error_msg)
+        
+        # Provide new order options after a short delay
+        send_default_options(phone_number, whatsapp_service)
+        session.update_state(ConversationState.IDLE)
+        db.commit()
+        return
+    
     # STEP 3: Handle state-specific message processing
     if current_state == ConversationState.AWAITING_ORDER_DETAILS:
         # User is providing order details
         if message_type == "text" and len(message) > 5:
-            await create_order(phone_number, customer.id, group_id, message, db, whatsapp_service)
+            new_order = await create_order(phone_number, customer.id, group_id, message, db, whatsapp_service)
+            if new_order:
+                # Save the order ID in conversation context
+                session.update_context({"current_order_id": new_order.id})
             session.update_state(ConversationState.AWAITING_PAYMENT)
             db.commit()
             return
@@ -239,6 +284,18 @@ async def handle_customer_message_with_context(customer, event_data, db, current
     
     elif current_state == ConversationState.AWAITING_PAYMENT_CONFIRMATION:
         # User is providing payment confirmation
+        # Check if the order they're trying to pay for is already completed
+        if has_completed_order and recent_completed_order:
+            whatsapp_service.send_text_message(
+                phone_number,
+                f"Your order #{recent_completed_order.order_number} has already been completed. "
+                "If you'd like to place a new order, please select 'Place Order'."
+            )
+            send_default_options(phone_number, whatsapp_service)
+            session.update_state(ConversationState.IDLE)
+            db.commit()
+            return
+            
         if is_mpesa_message(message, message_type):
             await handle_mpesa_confirmation(phone_number, customer.id, message, db, whatsapp_service)
             session.update_state(ConversationState.IDLE)
@@ -259,7 +316,7 @@ async def handle_customer_message_with_context(customer, event_data, db, current
     session.update_state(ConversationState.IDLE)
     db.commit()
 
-def detect_customer_intent(message, message_type, button_id, current_state):
+def detect_customer_intent(message, message_type, button_id, current_state, completed_order=False):
     """
     Detect customer intent from message content and type
     """
@@ -274,8 +331,14 @@ def detect_customer_intent(message, message_type, button_id, current_state):
         elif button_id == "contact_support":
             return "contact_support"
         elif button_id in ["mpesa_message", "pay_with_m-pesa"]:
+            # Don't allow payment changes for completed orders
+            if completed_order:
+                return "invalid_payment_for_completed"
             return "mpesa_payment"
         elif button_id == "pay_cash":
+            # Don't allow payment changes for completed orders
+            if completed_order:
+                return "invalid_payment_for_completed"
             return "cash_payment"
     
     # Second priority: Check message text for intent
@@ -299,15 +362,16 @@ def detect_customer_intent(message, message_type, button_id, current_state):
         if normalized_message in ["support", "help", "contact", "contact support", "talk to agent"]:
             return "contact_support"
             
-        # Check for payment intent
-        if "mpesa" in normalized_message or "m-pesa" in normalized_message or "pay" in normalized_message:
+        # Check for payment intent - Only if not a completed order
+        if not completed_order and ("mpesa" in normalized_message or "m-pesa" in normalized_message or "pay" in normalized_message):
             return "mpesa_payment"
             
-        if "cash" in normalized_message or "deliver" in normalized_message or "cod" in normalized_message:
+        if not completed_order and ("cash" in normalized_message or "deliver" in normalized_message or "cod" in normalized_message):
             return "cash_payment"
     
     # No clear intent detected
     return None
+
 
 def is_help_command(message, message_type, button_id):
     """Check if message is a help command"""
@@ -551,7 +615,10 @@ async def create_order(phone_number, customer_id, group_id, message, db, whatsap
             group_id=group_id,
             order_details=message,
             status=models.OrderStatus.PENDING,
-            total_amount=0.00  # This will be updated by the admin later
+            total_amount=0.00,  # This will be updated by the admin later
+            # Initialize notification tracking fields
+            notification_count=0,
+            last_notification_sent=None
         )
         
         db.add(order)
@@ -578,9 +645,13 @@ async def create_order(phone_number, customer_id, group_id, message, db, whatsap
                 "group_name": group_name  
             }
         )
+        
+        # Return the created order
+        return order
     except Exception as e:
         logger.error(f"Error creating order: {str(e)}")
         whatsapp_service.send_text_message(
             phone_number,
             "Sorry, we couldn't process your order. Please try again or contact support."
         )
+        return None
