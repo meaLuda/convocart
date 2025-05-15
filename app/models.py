@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import enum
+import json
 from sqlalchemy.orm import Session
-from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, Enum, Table, UniqueConstraint,func
+from sqlalchemy import JSON, Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, Enum, Table, UniqueConstraint,func
 from sqlalchemy.orm import relationship, validates
 from sqlalchemy.ext.declarative import declared_attr
 from app.database import Base
@@ -119,7 +120,8 @@ class Customer(Base, TimestampMixin):
     group = relationship("Group", back_populates="customers", foreign_keys=[group_id])
     active_group = relationship("Group", foreign_keys=[active_group_id])
     orders = relationship("Order", back_populates="customer")
-    
+    conversation_sessions = relationship("ConversationSession", back_populates="customer", order_by="desc(ConversationSession.last_interaction)")
+
     @validates('phone_number')
     def validate_phone(self, key, phone):
         if phone is not None:
@@ -206,8 +208,6 @@ class Configuration(Base):
         return config
 
 
-
-
 class Order(Base, TimestampMixin):
     __tablename__ = "orders"
 
@@ -236,4 +236,99 @@ class Order(Base, TimestampMixin):
         timestamp = datetime.utcnow().strftime('%Y%m%d')
         random_part = ''.join(secrets.choice(string.digits) for _ in range(4))
         return f"ORD-{timestamp}-{random_part}"
+
+
+class ConversationState(str, Enum):
+    """
+    Enum for tracking conversation states
+    """
+    INITIAL = "initial"
+    WELCOME = "welcome"
+    AWAITING_ORDER_DETAILS = "awaiting_order_details"
+    AWAITING_PAYMENT = "awaiting_payment"
+    AWAITING_PAYMENT_CONFIRMATION = "awaiting_payment_confirmation"
+    TRACKING_ORDER = "tracking_order"
+    WAITING_FOR_SUPPORT = "waiting_for_support"
+    IDLE = "idle"
+
+class ConversationSession(Base):
+    """
+    Model for tracking customer conversation sessions
+    """
+    __tablename__ = "conversation_sessions"
     
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    current_state = Column(String(50), default=ConversationState.INITIAL)
+    context_data = Column(JSON, nullable=True)  # Stores JSON data related to current conversation
+    last_interaction = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    customer = relationship("Customer", back_populates="conversation_sessions")
+    
+    def update_state(self, new_state, context=None):
+        """
+        Update the conversation state and context
+        """
+        self.current_state = new_state.value if isinstance(new_state, ConversationState) else new_state
+        
+        if context:
+            # Update only the provided context fields, preserving existing ones
+            current_context = self.get_context() or {}
+            current_context.update(context)
+            self.context_data = current_context
+            
+        self.last_interaction = datetime.utcnow()
+        
+    def get_context(self):
+        """
+        Get the current context data as a Python dict
+        """
+        if self.context_data:
+            if isinstance(self.context_data, str):
+                return json.loads(self.context_data)
+            return self.context_data
+        return {}
+        
+    def is_expired(self, expiry_minutes=30):
+        """
+        Check if the conversation has expired (inactive for too long)
+        """
+        if not self.is_active:
+            return True
+            
+        expiry_time = datetime.utcnow() - timedelta(minutes=expiry_minutes)
+        return self.last_interaction < expiry_time
+    
+    @classmethod
+    def get_or_create_session(cls, db, customer_id):
+        """
+        Get the active session for a customer or create a new one
+        """
+        # Find active session
+        session = db.query(cls).filter(
+            cls.customer_id == customer_id,
+            cls.is_active == True
+        ).order_by(cls.last_interaction.desc()).first()
+        
+        # If no active session or session expired, create new one
+        if not session or session.is_expired():
+            if session:
+                # Deactivate expired session
+                session.is_active = False
+                db.commit()
+                
+            # Create new session
+            session = cls(
+                customer_id=customer_id,
+                current_state=ConversationState.INITIAL,
+                is_active=True
+            )
+            db.add(session)
+            db.commit()
+            db.refresh(session)
+            
+        return session

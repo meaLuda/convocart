@@ -14,21 +14,11 @@ class WhatsAppService:
         """
         # Try to get configuration from database if provided
         if db:
-            try:
-                from app.models import Configuration
-                # Get values from database with fallback to environment variables
-                api_url = Configuration.get_value(db, 'whatsapp_api_url', WHATSAPP_API_URL)
-                phone_id = Configuration.get_value(db, 'whatsapp_phone_id', WHATSAPP_PHONE_ID)
-                api_token = Configuration.get_value(db, 'whatsapp_api_token', WHATSAPP_API_TOKEN)
-                
-                logger.info(f"Using database configuration for WhatsApp service")
-            except Exception as e:
-                logger.error(f"Error getting WhatsApp config from database: {str(e)}")
-                # Fallback to environment variables
-                api_url = WHATSAPP_API_URL
-                phone_id = WHATSAPP_PHONE_ID
-                api_token = WHATSAPP_API_TOKEN
-                logger.info(f"Falling back to environment variables for WhatsApp config")
+            from app.models import Configuration
+            # Get values from database with fallback to environment variables
+            api_url = Configuration.get_value(db, 'whatsapp_api_url', WHATSAPP_API_URL)
+            phone_id = Configuration.get_value(db, 'whatsapp_phone_id', WHATSAPP_PHONE_ID)
+            api_token = Configuration.get_value(db, 'whatsapp_api_token', WHATSAPP_API_TOKEN)
         else:
             # Use environment variables directly
             api_url = WHATSAPP_API_URL
