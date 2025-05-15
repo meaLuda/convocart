@@ -102,7 +102,7 @@
                             <span class="text-xs text-gray-500">Not specified</span>
                         {% endif %}
                     </td>
-                    <td class="border p-2">${{ "%.2f"|format(order.total_amount) }}</td>
+                    <td class="border p-2 text-xs">Ksh {{ "%.2f"|format(order.total_amount) }}</td>
                     <td class="border p-2" title="{{ order.created_at }}">
                         {{ order.created_at.strftime('%Y-%m-%d %H:%M') }}
                     </td>
@@ -131,9 +131,17 @@
                                 <input type="text" name="payment_ref" placeholder="Payment ref" 
                                     value="{{ order.payment_ref or '' }}" class="text-sm border rounded px-2 py-1 w-24">
                             </div>
-                            <div class="flex items-center">
-                                <input type="checkbox" name="notify_customer" id="notify_{{ order.id }}" value="True" class="mr-2">
-                                <label for="notify_{{ order.id }}" class="text-xs">Notify customer</label>
+                            <div class="flex space-x-1">
+                                <div class="flex items-center">
+                                    <span class="text-xs mr-1">KSH</span>
+                                    <input type="number" name="total_amount" placeholder="Amount" 
+                                        value="{{ order.total_amount or 0 }}" step="0.01" min="0"
+                                        class="text-sm border rounded px-2 py-1 w-24">
+                                </div>
+                                <div class="flex items-center ml-2">
+                                    <input type="checkbox" name="notify_customer" id="notify_{{ order.id }}" value="True" class="mr-2">
+                                    <label for="notify_{{ order.id }}" class="text-xs">Notify customer</label>
+                                </div>
                             </div>
                         </form>
                     </td>

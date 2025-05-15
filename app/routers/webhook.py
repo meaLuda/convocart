@@ -1,3 +1,4 @@
+# routes/webhook.py
 import json
 import logging
 import re
@@ -380,8 +381,8 @@ def send_default_options(phone_number, whatsapp_service):
     
     whatsapp_service.send_quick_reply_buttons(phone_number, default_message, buttons)
 
-async def handle_track_order(phone_number, customer_id, db, whatsapp_service):
-    """Handle order tracking request"""
+async def handle_track_order(phone_number, customer_id, db, whatsapp_service: WhatsAppService):
+    """Handle order tracking request with enhanced details using status template"""
     # Find recent orders for this customer
     recent_orders = db.query(models.Order).filter(
         models.Order.customer_id == customer_id
@@ -393,29 +394,39 @@ async def handle_track_order(phone_number, customer_id, db, whatsapp_service):
             "You don't have any recent orders. Would you like to place a new order?"
         )
         return
-        
-    # Display recent orders
-    orders_message = "📦 *Your Recent Orders*\n\n"
     
+    # For each order, send a separate, detailed status update
+    # This gives the customer a complete view of each order
     for order in recent_orders:
-        # Get emoji for order status
-        status_emoji = {
-            models.OrderStatus.PENDING: "🕒",
-            models.OrderStatus.PROCESSING: "⚙️",
-            models.OrderStatus.COMPLETED: "✅",
-            models.OrderStatus.CANCELLED: "❌",
-            models.OrderStatus.REFUNDED: "💰"
+        # Get group name
+        group_name = "Our store"
+        if order.group_id:
+            group = db.query(models.Group).filter(models.Group.id == order.group_id).first()
+            if group:
+                group_name = group.name
+        
+        # Create order data dictionary for the template
+        order_data = {
+            "order_number": order.order_number,
+            "status": order.status.value,
+            "group_name": group_name,
+            "total_amount": order.total_amount,
+            "created_at": order.created_at.strftime('%Y-%m-%d %H:%M'),
+            "order_details": order.order_details
         }
         
-        emoji = status_emoji.get(order.status, "")
+        # Add payment information if available
+        if order.payment_method:
+            order_data["payment_method"] = order.payment_method.value.replace('_', ' ').title()
+            
+            if order.payment_status:
+                order_data["payment_status"] = order.payment_status.value.title()
+                
+            if order.payment_ref:
+                order_data["payment_ref"] = order.payment_ref
         
-        # Format order details
-        orders_message += f"{emoji} Order #{order.order_number}\n"
-        orders_message += f"Status: {order.status.value.capitalize()}\n"
-        orders_message += f"Date: {order.created_at.strftime('%Y-%m-%d %H:%M')}\n"
-        orders_message += f"Amount: ${order.total_amount:.2f}\n\n"
-    
-    whatsapp_service.send_text_message(phone_number, orders_message)
+        # Send detailed order status update for this order
+        whatsapp_service.send_order_status_update(phone_number, order_data)
 
 async def handle_cancel_order(phone_number, customer_id, db, whatsapp_service):
     """Handle order cancellation request"""
@@ -480,8 +491,8 @@ async def handle_cash_payment(phone_number, customer_id, db, whatsapp_service):
             "Sorry, we couldn't find a pending order to update. Please place a new order first."
         )
 
-async def handle_mpesa_confirmation(phone_number, customer_id, message, db, whatsapp_service):
-    """Handle M-Pesa confirmation message"""
+async def handle_mpesa_confirmation(phone_number, customer_id, message, db, whatsapp_service: WhatsAppService):
+    """Handle M-Pesa confirmation message with improved notifications"""
     # Extract what might be the transaction code
     transaction_code = message.upper()
     
@@ -506,15 +517,23 @@ async def handle_mpesa_confirmation(phone_number, customer_id, message, db, what
         db.commit()
         logger.info(f"Updated order {last_order.order_number} with M-Pesa payment: {transaction_code}")
         
-        # Send confirmation
-        whatsapp_service.send_payment_confirmation(
-            phone_number,
-            {
-                "method": "mpesa",
-                "order_number": last_order.order_number,
-                "payment_ref": transaction_code
-            }
-        )
+        # Get group information for more detailed messaging
+        group_name = "Our store"
+        if last_order.group_id:
+            group = db.query(models.Group).filter(models.Group.id == last_order.group_id).first()
+            if group:
+                group_name = group.name
+        
+        # Use the payment status update template
+        payment_data = {
+            "order_number": last_order.order_number,
+            "payment_status": last_order.payment_status.value,
+            "payment_method": "M-Pesa",
+            "payment_ref": transaction_code,
+            "amount": last_order.total_amount
+        }
+        
+        whatsapp_service.send_payment_status_update(phone_number, payment_data)
     else:
         logger.warning(f"Received M-Pesa payment but no pending order found for customer {customer_id}")
         whatsapp_service.send_text_message(
@@ -522,8 +541,8 @@ async def handle_mpesa_confirmation(phone_number, customer_id, message, db, what
             "Thank you for the payment information, but we couldn't find a pending order. Please place an order first."
         )
 
-async def create_order(phone_number, customer_id, group_id, message, db, whatsapp_service):
-    """Create a new order from customer details"""
+async def create_order(phone_number, customer_id, group_id, message, db, whatsapp_service: WhatsAppService):
+    """Create a new order from customer details with improved notifications"""
     try:
         logger.info(f"Creating new order for customer {customer_id} in group {group_id}")
         # Create a new order with the text as details
@@ -540,13 +559,23 @@ async def create_order(phone_number, customer_id, group_id, message, db, whatsap
         db.refresh(order)
         logger.info(f"Created new order with ID {order.id}, number {order.order_number}")
         
-        # Send confirmation with payment options
+        # Get group information for more detailed messaging
+        group_name = "Our store"
+        if group_id:
+            group = db.query(models.Group).filter(models.Group.id == group_id).first()
+            if group:
+                group_name = group.name
+        
+        # Send order confirmation with payment options
+        # We'll continue to use the specific order_confirmation template
+        # because it includes the payment buttons
         whatsapp_service.send_order_confirmation(
             phone_number,
             {
                 "order_number": order.order_number,
                 "items": message,
-                "total_amount": order.total_amount  
+                "total_amount": order.total_amount,
+                "group_name": group_name  
             }
         )
     except Exception as e:

@@ -94,10 +94,10 @@ async def startup_event():
 @app.get("/")
 async def root(request: Request):
     return templates.TemplateResponse(
-        "base.html",
+        "intro.html",
         {
             "request": request,
-            "title": "WhatsApp Order Bot",
+            "title": "WhatsApp Order Bot ConvoCart",
             "message": "Welcome to the WhatsApp Order Bot"
         }
     )

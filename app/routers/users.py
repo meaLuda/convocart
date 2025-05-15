@@ -304,6 +304,7 @@ async def update_order_status(
     status: str = Form(...),
     payment_status: Optional[str] = Form(None),
     payment_ref: Optional[str] = Form(None),
+    total_amount: Optional[float] = Form(None),  # Add total_amount parameter
     notify_customer: bool = Form(False),
     request: Request = None,
     db: Session = Depends(get_db)
@@ -322,9 +323,6 @@ async def update_order_status(
     if not check_admin_has_access_to_group(current_admin, order.group_id, db):
         raise HTTPException(status_code=403, detail="You don't have permission to update this order")
 
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    
     # Check permissions - only allow super admins or admins assigned to the order's group
     if current_admin.role != models.UserRole.SUPER_ADMIN:
         group_ids = [group.id for group in current_admin.groups]
@@ -333,6 +331,7 @@ async def update_order_status(
     
     # Get previous status for change detection
     previous_status = order.status
+    previous_payment_status = order.payment_status
     
     try:
         # Update the order status using enum
@@ -345,6 +344,13 @@ async def update_order_status(
         # Update payment reference if provided
         if payment_ref:
             order.payment_ref = payment_ref
+        
+        # Update total amount if provided
+        if total_amount is not None:
+            try:
+                order.total_amount = float(total_amount)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid amount value")
             
         db.commit()
     except ValueError as e:
@@ -357,27 +363,56 @@ async def update_order_status(
         customer = db.query(models.Customer).filter(models.Customer.id == order.customer_id).first()
         if customer:
             # Import the WhatsApp service directly and initialize with DB session
-            # This ensures it gets the token from the database
             from app.services.whatsapp import WhatsAppService
             whatsapp_service = WhatsAppService(db)
             
-            # Create status update message
-            status_messages = {
-                models.OrderStatus.PENDING.value: "🕒 Your order #{} is pending processing. We'll update you soon!",
-                models.OrderStatus.PROCESSING.value: "⚙️ Your order #{} is now being processed. We're working on it!",
-                models.OrderStatus.COMPLETED.value: "✅ Good news! Your order #{} has been completed. Thank you for your business!",
-                models.OrderStatus.CANCELLED.value: "❌ Your order #{} has been cancelled. Please contact group admin you have any questions.",
-                models.OrderStatus.REFUNDED.value: "💰 Your order #{} has been refunded. The amount will be credited back to your account."
-            }
+            # Get group name for personalized messages
+            group_name = order.group.name if order.group else "Our store"
             
-            message = status_messages.get(order.status.value, "Your order #{} status has been updated to: {}").format(
-                order.order_number, order.status.value
-            )
+            # Determine if we should use order update or payment update notification
+            if previous_payment_status != order.payment_status and order.payment_method:
+                # Payment status has changed, so send a payment update notification
+                payment_data = {
+                    "order_number": order.order_number,
+                    "payment_status": order.payment_status.value,
+                    "payment_method": order.payment_method.value.replace('_', ' ').title(),
+                    "payment_ref": order.payment_ref or "",
+                    "amount": order.total_amount
+                }
+                
+                # Send payment status update notification
+                whatsapp_service.send_payment_status_update(
+                    customer.phone_number,
+                    payment_data
+                )
+            else:
+                # Send a comprehensive order status update
+                order_data = {
+                    "order_number": order.order_number,
+                    "status": order.status.value,
+                    "group_name": group_name,
+                    "total_amount": order.total_amount,
+                    "created_at": order.created_at.strftime('%Y-%m-%d %H:%M'),
+                    "order_details": order.order_details
+                }
+                
+                # Add payment information if available
+                if order.payment_method:
+                    order_data["payment_method"] = order.payment_method.value.replace('_', ' ').title()
+                    
+                    if order.payment_status:
+                        order_data["payment_status"] = order.payment_status.value.title()
+                        
+                    if order.payment_ref:
+                        order_data["payment_ref"] = order.payment_ref
+                
+                # Send order status update notification
+                whatsapp_service.send_order_status_update(
+                    customer.phone_number,
+                    order_data
+                )
             
-            # Send the message
-            whatsapp_service.send_text_message(customer.phone_number, message)
-            
-            # If order is completed, perhaps ask for feedback
+            # If order is completed, ask for feedback
             if order.status == models.OrderStatus.COMPLETED and previous_status != models.OrderStatus.COMPLETED:
                 buttons = [
                     {"id": "feedback_good", "title": "👍 Great!"},

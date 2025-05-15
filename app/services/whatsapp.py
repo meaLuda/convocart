@@ -117,31 +117,33 @@ class WhatsAppService:
     
     def send_order_confirmation(self, to: str, order_details: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Send an order confirmation message
+        Send an order confirmation message with enhanced details and KSH currency
         """
         # Format order items nicely if provided as JSON
         items_text = ""
         items = order_details.get('items', [])
+        order_number = order_details.get('order_number', 'N/A')
+        total_amount = order_details.get('total_amount', 0)
+        group_name = order_details.get('group_name', 'Our store')
         
         if isinstance(items, list):
             for i, item in enumerate(items, 1):
                 name = item.get('name', 'Unknown item')
                 quantity = item.get('quantity', 1)
                 price = item.get('price', 0)
-                items_text += f"{i}. {name} x{quantity} - ${price:.2f}\n"
+                items_text += f"{i}. {name} x{quantity} - KSH {price:.2f}\n"
         else:
             # Just use the raw text if not in expected format
             items_text = str(items)
         
         confirmation_text = f"📝 *ORDER SAVED*\n"
-        confirmation_text += f"Order #: {order_details.get('order_number', 'N/A')}\n\n"
+        confirmation_text += f"Order #: {order_number}\n"
+        confirmation_text += f"Store: {group_name}\n\n"
         confirmation_text += f"*Items:*\n{items_text}\n"
         
-        if 'total_amount' in order_details:
-            # Only show total amount if it's greater than 0
-            if order_details['total_amount'] > 0:
-                confirmation_text += f"*Total:* ${order_details.get('total_amount', 0):.2f}\n\n"
-            
+        if total_amount > 0:
+            confirmation_text += f"*Total:* KSH {total_amount:.2f}\n\n"
+        
         confirmation_text += "Thank you for your order! 🙏\n"
         confirmation_text += "Your group admin will confirm your order and update you shortly.\n\n"
         confirmation_text += "For payment please confirm the following.\n\n"
@@ -154,31 +156,163 @@ class WhatsAppService:
         ]
         
         return self.send_quick_reply_buttons(to, confirmation_text, buttons)
-    
+
     def send_payment_confirmation(self, to: str, payment_details: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Send a payment confirmation message
+        Send a payment confirmation message with enhanced details
         """
         payment_method = payment_details.get('method', 'Unknown')
         order_number = payment_details.get('order_number', 'N/A')
         payment_ref = payment_details.get('payment_ref', 'N/A')
+        amount = payment_details.get('amount', 0)
         
         if payment_method == 'mpesa':
             message = f"✅ *PAYMENT INFORMATION SAVED*\n\n"
             message += f"Order #: {order_number}\n"
             message += f"Payment Method: M-Pesa\n"
-            message += f"Transaction Code: {payment_ref}\n\n"
+            message += f"Transaction Code: {payment_ref}\n"
+            
+            if amount > 0:
+                message += f"Amount: KSH {amount:.2f}\n"
+                
+            message += "\n"
             # payment pending confirmation
             message += "Your payment is pending confirmation. Please wait for your group admin to confirm.\n\n"
             message += "Your order has been received and is being processed. Thank you!"
         else:  # cash on delivery
             message = f"✅ *ORDER CONFIRMED*\n\n"
             message += f"Order #: {order_number}\n"
-            message += f"Payment Method: Cash on Delivery\n\n"
+            message += f"Payment Method: Cash on Delivery\n"
+            
+            if amount > 0:
+                message += f"Amount to Pay: KSH {amount:.2f}\n"
+                
+            message += "\n"
             message += "Your order has been received and is being processed. You will pay upon delivery. Thank you!"
         
         return self.send_text_message(to, message)
     
+    def send_order_status_update(self, to: str, order_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Send a comprehensive order status update message
+        """
+        order_number = order_data.get('order_number', 'N/A')
+        status = order_data.get('status', 'unknown')
+        group_name = order_data.get('group_name', 'Our store')
+        total_amount = order_data.get('total_amount', 0)
+        payment_method = order_data.get('payment_method', '')
+        payment_status = order_data.get('payment_status', '')
+        payment_ref = order_data.get('payment_ref', '')
+        order_details = order_data.get('order_details', '')
+        created_at = order_data.get('created_at', '')
+        
+        # Status emoji mapping
+        status_emoji = {
+            'pending': '🕒',
+            'processing': '⚙️',
+            'completed': '✅',
+            'cancelled': '❌',
+            'refunded': '💰'
+        }
+        
+        emoji = status_emoji.get(status.lower(), '')
+        
+        # Build message
+        message = f"{emoji} *ORDER STATUS UPDATE*\n\n"
+        message += f"Your order #{order_number} with {group_name} "
+        
+        # Status-specific message
+        if status.lower() == 'pending':
+            message += "is pending processing. We'll update you soon!"
+        elif status.lower() == 'processing':
+            message += "is now being processed. We're working on it!"
+        elif status.lower() == 'completed':
+            message += "has been completed. Thank you for your business!"
+        elif status.lower() == 'cancelled':
+            message += "has been cancelled. Please contact us if you have any questions."
+        elif status.lower() == 'refunded':
+            message += "has been refunded. The amount will be credited back to your account."
+        else:
+            message += f"status has been updated to: {status}"
+        
+        # Order details section
+        message += "\n\n*Order Details:*"
+        if created_at:
+            message += f"\nDate: {created_at}"
+        
+        if total_amount > 0:
+            message += f"\nAmount: KSH {total_amount:.2f}"
+        
+        # Payment information
+        if payment_method:
+            message += f"\nPayment Method: {payment_method}"
+            
+        if payment_status:
+            message += f"\nPayment Status: {payment_status}"
+            
+        if payment_ref:
+            message += f"\nReference: {payment_ref}"
+        
+        # Order items preview
+        if order_details:
+            message += f"\n\n*Items:*\n{order_details[:100]}"
+            if len(order_details) > 100:
+                message += "..."
+        
+        # Send the message
+        return self.send_text_message(to, message)
+
+    def send_payment_status_update(self, to: str, payment_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Send a payment status update notification
+        """
+        order_number = payment_data.get('order_number', 'N/A')
+        payment_status = payment_data.get('payment_status', 'unknown')
+        payment_method = payment_data.get('payment_method', '')
+        payment_ref = payment_data.get('payment_ref', '')
+        amount = payment_data.get('amount', 0)
+        
+        # Payment status emoji mapping
+        status_emoji = {
+            'unpaid': '⏳',
+            'paid': '💵',
+            'verified': '✅',
+            'failed': '❌',
+            'refunded': '↩️'
+        }
+        
+        emoji = status_emoji.get(payment_status.lower(), '')
+        
+        # Build message
+        message = f"{emoji} *PAYMENT STATUS UPDATE*\n\n"
+        message += f"Order #: {order_number}\n"
+        
+        if payment_method:
+            message += f"Payment Method: {payment_method}\n"
+            
+        if amount > 0:
+            message += f"Amount: KSH {amount:.2f}\n"
+            
+        if payment_ref:
+            message += f"Reference: {payment_ref}\n"
+        
+        message += f"\nPayment Status: {payment_status.title()}\n\n"
+        
+        # Status-specific message
+        if payment_status.lower() == 'unpaid':
+            message += "Your payment is pending. Please complete your payment to process your order."
+        elif payment_status.lower() == 'paid':
+            message += "We've received your payment and are verifying it. Your order will be processed soon."
+        elif payment_status.lower() == 'verified':
+            message += "Your payment has been verified. Thank you! Your order is being processed."
+        elif payment_status.lower() == 'failed':
+            message += "There was an issue with your payment. Please try again or contact support."
+        elif payment_status.lower() == 'refunded':
+            message += "Your payment has been refunded. The amount will be credited back to your account."
+        
+        # Send the message
+        return self.send_text_message(to, message)
+
     def _make_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         Make a request to the WhatsApp API

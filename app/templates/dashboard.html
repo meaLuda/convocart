@@ -196,7 +196,7 @@
                                 <span class="text-xs text-gray-500">Not specified</span>
                             {% endif %}
                         </td>
-                        <td class="border p-2">${{ "%.2f"|format(order.total_amount) }}</td>
+                        <td class="border p-2">Ksh {{ "%.2f"|format(order.total_amount) }}</td>
                         <td class="border p-2" title="{{ order.created_at }}">
                             {{ order.created_at.strftime('%Y-%m-%d %H:%M') }}
                         </td>
