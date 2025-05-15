@@ -692,36 +692,96 @@ async def settings_page(
     """
     System-wide settings page
     """
-    # Get all configurations
-    configs = db.query(models.Configuration).all()
-    
-    # Organize by keys
-    config_map = {}
-    for config in configs:
-        config_map[config.key] = config
-    
-    # Get the WhatsApp phone number from config or environment
-    whatsapp_phone = config_map.get('whatsapp_phone_number', None)
-    if not whatsapp_phone:
-        # Use environment WHATSAPP_PHONE_NUMBER if available, strip any '+' prefix
-        default_phone = WHATSAPP_PHONE_NUMBER.replace('+', '') if WHATSAPP_PHONE_NUMBER else ''
-        whatsapp_phone = models.Configuration(
-            key='whatsapp_phone_number',
-            value=default_phone,
-            description='WhatsApp Business Phone Number (without + prefix)'
+    try:
+        # Get all configurations
+        configs = db.query(models.Configuration).all()
+        
+        # Check for success or error messages from the query parameters
+        success_message = request.query_params.get('success')
+        error_message = request.query_params.get('error')
+        
+        # WhatsApp config keys that should be in the database
+        whatsapp_config_keys = [
+            'whatsapp_phone_number',
+            'whatsapp_api_url',
+            'whatsapp_phone_id',
+            'whatsapp_api_token',
+            'webhook_verify_token'
+        ]
+        
+        # General config keys
+        general_config_keys = [
+            'business_name',
+            'default_welcome_message'
+        ]
+        
+        # Ensure all expected config keys exist in the database
+        for key in whatsapp_config_keys + general_config_keys:
+            config = db.query(models.Configuration).filter(models.Configuration.key == key).first()
+            if not config:
+                # Get default value from environment variables for WhatsApp settings
+                default_value = ""
+                description = ""
+                
+                if key == 'whatsapp_phone_number':
+                    from app.config import WHATSAPP_PHONE_NUMBER
+                    default_value = WHATSAPP_PHONE_NUMBER.replace('+', '') if WHATSAPP_PHONE_NUMBER else ''
+                    description = 'WhatsApp Business Phone Number (without + prefix)'
+                elif key == 'whatsapp_api_url':
+                    from app.config import WHATSAPP_API_URL
+                    default_value = WHATSAPP_API_URL or ''
+                    description = 'WhatsApp API URL'
+                elif key == 'whatsapp_phone_id':
+                    from app.config import WHATSAPP_PHONE_ID
+                    default_value = WHATSAPP_PHONE_ID or ''
+                    description = 'WhatsApp Phone ID'
+                elif key == 'whatsapp_api_token':
+                    from app.config import WHATSAPP_API_TOKEN
+                    default_value = WHATSAPP_API_TOKEN or ''
+                    description = 'WhatsApp API Token'
+                elif key == 'webhook_verify_token':
+                    from app.config import WEBHOOK_VERIFY_TOKEN
+                    default_value = WEBHOOK_VERIFY_TOKEN or ''
+                    description = 'Webhook Verification Token'
+                elif key == 'business_name':
+                    description = 'Business Name'
+                elif key == 'default_welcome_message':
+                    description = 'Default welcome message for new customers'
+                
+                # Create the configuration entry
+                new_config = models.Configuration(
+                    key=key,
+                    value=default_value,
+                    description=description
+                )
+                db.add(new_config)
+                db.commit()
+                
+                # Add to the configs list
+                configs.append(new_config)
+        
+        return templates.TemplateResponse(
+            "settings.html",
+            {
+                "request": request,
+                "admin": current_admin,
+                "configs": configs,
+                "success_message": success_message,
+                "error_message": error_message
+            }
         )
-        db.add(whatsapp_phone)
-        db.commit()
-    
-    return templates.TemplateResponse(
-        "settings.html",
-        {
-            "request": request,
-            "admin": current_admin,
-            "configs": configs,
-            "whatsapp_phone": whatsapp_phone
-        }
-    )
+    except Exception as e:
+        logger.error(f"Error loading settings page: {str(e)}")
+        return templates.TemplateResponse(
+            "settings.html",
+            {
+                "request": request,
+                "admin": current_admin,
+                "configs": [],
+                "success_message": None,
+                "error_message": f"Error loading settings: {str(e)}"
+            }
+        )
 
 @router.post("/admin/settings/update")
 async def update_settings(
@@ -732,15 +792,65 @@ async def update_settings(
     """
     Update system settings
     """
-    form_data = await request.form()
+    try:
+        form_data = await request.form()
+        
+        # Get all form fields with 'config_' prefix
+        updated_count = 0
+        for key, value in form_data.items():
+            if key.startswith('config_'):
+                config_key = key.replace('config_', '')
+                models.Configuration.set_value(db, config_key, value)
+                updated_count += 1
+        
+        # Redirect with success message
+        return RedirectResponse(
+            url=f"/admin/settings?success=Successfully updated {updated_count} settings", 
+            status_code=303
+        )
+    except Exception as e:
+        logger.error(f"Error updating settings: {str(e)}")
+        return RedirectResponse(
+            url=f"/admin/settings?error={str(e)}", 
+            status_code=303
+        )
+
+@router.post("/admin/reload-whatsapp-config")
+async def reload_whatsapp_config(
+    request: Request,
+    current_admin: models.User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Reload the WhatsApp service with the latest database configuration
+    """
+    # Only super admins can reload the configuration
+    if current_admin.role != models.UserRole.SUPER_ADMIN:
+        return JSONResponse(status_code=403, content={
+            "success": False,
+            "message": "Only super admins can reload WhatsApp configuration"
+        })
     
-    # Get all form fields with 'config_' prefix
-    for key, value in form_data.items():
-        if key.startswith('config_'):
-            config_key = key.replace('config_', '')
-            models.Configuration.set_value(db, config_key, value)
-    
-    return RedirectResponse(url="/admin/settings", status_code=303)
+    try:
+        # Create a new WhatsApp service instance with the latest config
+        from app.services.whatsapp import WhatsAppService
+        
+        # Update the webhook router's service instance
+        import app.routers.webhook as webhook_router
+        webhook_router.whatsapp_service = WhatsAppService(db)
+        
+        logger.info(f"WhatsApp configuration reloaded by admin: {current_admin.username}")
+        
+        return JSONResponse(content={
+            "success": True,
+            "message": "WhatsApp configuration reloaded successfully"
+        })
+    except Exception as e:
+        logger.error(f"Error reloading WhatsApp configuration: {str(e)}")
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "message": f"Error reloading configuration: {str(e)}"
+        })
 
 @router.get("/admin/groups/link-generator", response_class=HTMLResponse)
 async def link_generator(

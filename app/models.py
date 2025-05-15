@@ -1,6 +1,7 @@
 from datetime import datetime
 import enum
-from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, Enum, Table, UniqueConstraint
+from sqlalchemy.orm import Session
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, Enum, Table, UniqueConstraint,func
 from sqlalchemy.orm import relationship, validates
 from sqlalchemy.ext.declarative import declared_attr
 from app.database import Base
@@ -164,33 +165,43 @@ class Group(Base, TimestampMixin):
             raise ValueError("Identifier can only contain lowercase letters, numbers, underscores, and dashes")
         return identifier
 
-class Configuration(Base, TimestampMixin):
+class Configuration(Base):
+    """
+    System configuration settings stored as key-value pairs
+    """
     __tablename__ = "configurations"
-
+    
     id = Column(Integer, primary_key=True, index=True)
-    key = Column(String(50), unique=True, index=True, nullable=False)
+    key = Column(String(255), unique=True, index=True, nullable=False)
     value = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
-    is_public = Column(Boolean, default=False, nullable=False)  # Whether this config can be exposed to frontend
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
-    @classmethod
-    def get_value(cls, db, key, default=None):
-        """Get a configuration value by key"""
-        config = db.query(cls).filter(cls.key == key).first()
-        return config.value if config else default
-
-    @classmethod
-    def set_value(cls, db, key, value, description=None, is_public=False):
-        """Set a configuration value"""
-        config = db.query(cls).filter(cls.key == key).first()
+    @staticmethod
+    def get_value(db: Session, key: str, default_value: str = None) -> str:
+        """
+        Get a configuration value by key
+        """
+        config = db.query(Configuration).filter(Configuration.key == key).first()
+        if config and config.value:
+            return config.value
+        return default_value
+    
+    @staticmethod
+    def set_value(db: Session, key: str, value: str, description: str = None) -> 'Configuration':
+        """
+        Set a configuration value (create or update)
+        """
+        config = db.query(Configuration).filter(Configuration.key == key).first()
         if config:
             config.value = value
             if description:
                 config.description = description
-            config.is_public = is_public
         else:
-            config = cls(key=key, value=value, description=description, is_public=is_public)
+            config = Configuration(key=key, value=value, description=description)
             db.add(config)
+        
         db.commit()
         return config
 

@@ -8,11 +8,33 @@ from app.config import WHATSAPP_API_URL, WHATSAPP_PHONE_ID, WHATSAPP_API_TOKEN
 logger = logging.getLogger(__name__)
 
 class WhatsAppService:
-    def __init__(self):
-        self.api_url = f"{WHATSAPP_API_URL}/{WHATSAPP_PHONE_ID}/messages"
+    def __init__(self, db=None):
+        """
+        Initialize the WhatsApp service with configuration from database or environment variables
+        """
+        # Try to get configuration from database if provided
+        if db:
+            from app.models import Configuration
+            # Get values from database with fallback to environment variables
+            api_url = Configuration.get_value(db, 'whatsapp_api_url', WHATSAPP_API_URL)
+            phone_id = Configuration.get_value(db, 'whatsapp_phone_id', WHATSAPP_PHONE_ID)
+            api_token = Configuration.get_value(db, 'whatsapp_api_token', WHATSAPP_API_TOKEN)
+        else:
+            # Use environment variables directly
+            api_url = WHATSAPP_API_URL
+            phone_id = WHATSAPP_PHONE_ID
+            api_token = WHATSAPP_API_TOKEN
+            
+        # Log configuration status (without sensitive values)
+        logger.info(f"WhatsApp service initialized with API URL: {api_url}")
+        logger.info(f"WhatsApp service initialized with Phone ID: {phone_id}")
+        logger.debug(f"WhatsApp service API token configured: {'Yes' if api_token else 'No'}")
+        
+        # Set up the API URL and headers as in original implementation
+        self.api_url = f"{api_url}/{phone_id}/messages"
         self.headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {WHATSAPP_API_TOKEN}"
+            "Authorization": f"Bearer {api_token}"
         }
 
     def send_text_message(self, to: str, message: str) -> Dict[str, Any]:
@@ -255,3 +277,10 @@ class WhatsAppService:
         except Exception as e:
             logger.error(f"Error processing webhook event: {str(e)}")
             return None
+
+# Helper function to get an initialized WhatsApp service
+def get_whatsapp_service(db=None):
+    """
+    Get a WhatsApp service instance with current configuration
+    """
+    return WhatsAppService(db)

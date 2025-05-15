@@ -12,6 +12,9 @@ from app import models
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+# Initialize WhatsApp service - will be updated when configuration changes
 whatsapp_service = WhatsAppService()
 
 @router.get("/webhook")
