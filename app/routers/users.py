@@ -154,9 +154,6 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     current_admin = await get_current_admin(request, db)
     if isinstance(current_admin, RedirectResponse):
         return current_admin
-    # If a redirect was returned, return it
-    if isinstance(current_admin, RedirectResponse):
-        return current_admin
     
     # Add debugging logs
     logger.info(f"Dashboard: User {current_admin.username}, role: {current_admin.role}")
@@ -169,23 +166,25 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     if current_admin.role != models.UserRole.SUPER_ADMIN:
         if not current_admin.groups:
             logger.info(f"User {current_admin.username} has no groups, showing no orders")
-            query = query.filter(False)
+            query = query.filter(False)  # Empty result set
         else:
             group_ids = [group.id for group in current_admin.groups]
             logger.info(f"Filtering dashboard orders for groups: {group_ids}")
-            # Ensure this filter is applied BEFORE execution
             query = query.filter(models.Order.group_id.in_(group_ids))
             logger.info(f"SQL Query: {str(query.statement.compile(dialect=db.bind.dialect))}")
         
-    # IMPORTANT: Execute the query AFTER filters are applied
+    # Execute the query to get recent orders
     orders = query.order_by(models.Order.created_at.desc()).limit(10).all()
     
-    # Get order statistics - adjust filters as needed
-    # Make sure to reapply the same filters for consistent counts
+    # Get order statistics - use THE SAME filtering logic as for orders
     base_query = db.query(models.Order)
-    if current_admin.role != models.UserRole.SUPER_ADMIN and current_admin.groups:
-        group_ids = [group.id for group in current_admin.groups]
-        base_query = base_query.filter(models.Order.group_id.in_(group_ids))
+    if current_admin.role != models.UserRole.SUPER_ADMIN:
+        if not current_admin.groups:
+            # If admin has no groups, show zero counts
+            base_query = base_query.filter(False)  # Empty result set
+        else:
+            group_ids = [group.id for group in current_admin.groups]
+            base_query = base_query.filter(models.Order.group_id.in_(group_ids))
     
     total_orders = base_query.count()
     pending_orders = base_query.filter(models.Order.status == models.OrderStatus.PENDING).count()
@@ -193,7 +192,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     
     # Add pagination variables
     page_size = 10
-    total_pages = (total_orders + page_size - 1) // page_size
+    total_pages = (total_orders + page_size - 1) // page_size if total_orders > 0 else 1
     current_page = 1
     
     return templates.TemplateResponse(
