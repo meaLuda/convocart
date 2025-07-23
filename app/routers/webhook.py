@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from fastapi import APIRouter, Request, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
+from transitions import Machine
 from app.database import get_db
 from app.services.whatsapp import WhatsAppService
 from app.config import WEBHOOK_VERIFY_TOKEN
@@ -17,6 +18,146 @@ logger = logging.getLogger(__name__)
 
 # Initialize WhatsApp service - will be updated when configuration changes
 whatsapp_service = WhatsAppService()
+
+
+class ConversationStateMachine:
+    """State machine for managing conversation flow"""
+    
+    def __init__(self, session, customer, db, whatsapp_service, initial_state=None):
+        self.session = session
+        self.customer = customer
+        self.db = db
+        self.whatsapp_service = whatsapp_service
+        self.event_data = None
+        self.current_group_id = None
+        
+        # Define states using the existing ConversationState enum
+        states = [state.value for state in ConversationState]
+        
+        # Define transitions
+        transitions = [
+            # From INITIAL state
+            {'trigger': 'welcome', 'source': ConversationState.INITIAL.value, 'dest': ConversationState.WELCOME.value},
+            {'trigger': 'skip_to_idle', 'source': ConversationState.INITIAL.value, 'dest': ConversationState.IDLE.value},
+            
+            # From WELCOME state
+            {'trigger': 'to_idle', 'source': ConversationState.WELCOME.value, 'dest': ConversationState.IDLE.value},
+            
+            # From IDLE state - menu options
+            {'trigger': 'start_order', 'source': ConversationState.IDLE.value, 'dest': ConversationState.AWAITING_ORDER_DETAILS.value},
+            {'trigger': 'track_orders', 'source': ConversationState.IDLE.value, 'dest': ConversationState.IDLE.value, 'after': 'handle_track_order'},
+            {'trigger': 'cancel_order', 'source': ConversationState.IDLE.value, 'dest': ConversationState.IDLE.value, 'after': 'handle_cancel_order'},
+            {'trigger': 'contact_support', 'source': ConversationState.IDLE.value, 'dest': ConversationState.WAITING_FOR_SUPPORT.value, 'after': 'handle_contact_support'},
+            
+            # From AWAITING_ORDER_DETAILS
+            {'trigger': 'order_received', 'source': ConversationState.AWAITING_ORDER_DETAILS.value, 'dest': ConversationState.AWAITING_PAYMENT.value, 'after': 'create_order'},
+            {'trigger': 'order_invalid', 'source': ConversationState.AWAITING_ORDER_DETAILS.value, 'dest': ConversationState.AWAITING_ORDER_DETAILS.value},
+            
+            # From AWAITING_PAYMENT
+            {'trigger': 'mpesa_selected', 'source': ConversationState.AWAITING_PAYMENT.value, 'dest': ConversationState.AWAITING_PAYMENT_CONFIRMATION.value},
+            {'trigger': 'cash_selected', 'source': ConversationState.AWAITING_PAYMENT.value, 'dest': ConversationState.IDLE.value, 'after': 'handle_cash_payment'},
+            
+            # From AWAITING_PAYMENT_CONFIRMATION
+            {'trigger': 'payment_confirmed', 'source': ConversationState.AWAITING_PAYMENT_CONFIRMATION.value, 'dest': ConversationState.IDLE.value, 'after': 'handle_mpesa_confirmation'},
+            
+            # Global transitions (from any state)
+            {'trigger': 'help', 'source': '*', 'dest': '=', 'after': 'send_help_message'},  # '=' means stay in current state
+            {'trigger': 'reset', 'source': '*', 'dest': ConversationState.IDLE.value},
+        ]
+        
+        # Initialize the machine
+        initial = initial_state or session.current_state.value
+        self.machine = Machine(
+            model=self,
+            states=states,
+            transitions=transitions,
+            initial=initial,
+            ignore_invalid_triggers=True  # Don't raise errors for invalid transitions
+        )
+    
+    def set_event_data(self, event_data, current_group_id=None):
+        """Set the current event data for processing"""
+        self.event_data = event_data
+        self.current_group_id = current_group_id
+    
+    def on_exit_state(self):
+        """Called when exiting any state - update database"""
+        new_state_enum = ConversationState(self.state)
+        self.session.update_state(new_state_enum)
+        self.db.commit()
+    
+    # Callback methods for transitions
+    async def handle_track_order(self):
+        """Handle order tracking request"""
+        await handle_track_order(
+            self.customer.phone_number,
+            self.customer.id,
+            self.db,
+            self.whatsapp_service
+        )
+    
+    async def handle_cancel_order(self):
+        """Handle order cancellation"""
+        await handle_cancel_order(
+            self.customer.phone_number,
+            self.customer.id,
+            self.db,
+            self.whatsapp_service
+        )
+    
+    async def handle_contact_support(self):
+        """Handle support contact request"""
+        group_id = self.current_group_id or self.customer.active_group_id or self.customer.group_id
+        group = self.db.query(models.Group).filter(models.Group.id == group_id).first()
+        await handle_contact_support(
+            self.customer.phone_number,
+            group,
+            self.whatsapp_service
+        )
+    
+    async def create_order(self):
+        """Create a new order"""
+        message = self.event_data.get("message", "")
+        group_id = self.current_group_id or self.customer.active_group_id or self.customer.group_id
+        await create_order(
+            self.customer.phone_number,
+            self.customer.id,
+            group_id,
+            message,
+            self.db,
+            self.whatsapp_service
+        )
+    
+    async def handle_cash_payment(self):
+        """Handle cash payment selection"""
+        await handle_cash_payment(
+            self.customer.phone_number,
+            self.customer.id,
+            self.db,
+            self.whatsapp_service
+        )
+    
+    async def handle_mpesa_confirmation(self):
+        """Handle M-Pesa payment confirmation"""
+        message = self.event_data.get("message", "")
+        await handle_mpesa_confirmation(
+            self.customer.phone_number,
+            self.customer.id,
+            message,
+            self.db,
+            self.whatsapp_service
+        )
+    
+    async def send_help_message(self):
+        """Send help message"""
+        group_id = self.current_group_id or self.customer.active_group_id or self.customer.group_id
+        group = self.db.query(models.Group).filter(models.Group.id == group_id).first()
+        await send_help_message(
+            self.customer.phone_number,
+            group,
+            self.whatsapp_service
+        )
+
 
 @router.get("/webhook")
 async def verify_webhook(
@@ -128,7 +269,7 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
     
 async def handle_customer_message_with_context(customer, event_data, db, current_group_id=None):
     """
-    Process the customer message with conversation context awareness
+    Process the customer message with conversation context awareness using state machine
     """
     phone_number = customer.phone_number
     message = event_data.get("message", "").strip()
@@ -137,100 +278,90 @@ async def handle_customer_message_with_context(customer, event_data, db, current
     
     # Get or create conversation session
     session = models.ConversationSession.get_or_create_session(db, customer.id)
-    current_state = session.current_state
-    context = session.get_context()
     
     # Prioritize explicitly provided group_id, then active_group_id, then default group_id
     group_id = current_group_id or customer.active_group_id or customer.group_id
     
     # Debug log to help diagnose issues
-    logger.info(f"CONVERSATION CONTEXT: state={current_state}, customer_id={customer.id}, group_id={group_id}")
+    logger.info(f"CONVERSATION CONTEXT: state={session.current_state}, customer_id={customer.id}, group_id={group_id}")
     logger.info(f"Processing message: type={message_type}, content_preview={message[:30]}...")
     
     group = db.query(models.Group).filter(models.Group.id == group_id).first()
     
+    # Create state machine instance
+    sm = ConversationStateMachine(
+        session=session,
+        customer=customer,
+        db=db,
+        whatsapp_service=whatsapp_service,
+        initial_state=session.current_state.value
+    )
+    
+    # Set event data
+    sm.set_event_data(event_data, current_group_id)
+    
     # First, handle system-wide commands that override conversation state
     if is_help_command(message, message_type, button_id):
-        await send_help_message(phone_number, group, whatsapp_service)
+        await sm.help()
         return
         
-    # STEP 1: Handle the initial welcome flow
+    # Handle state transitions based on current state and input
+    current_state = session.current_state
+    
+    # INITIAL state handling
     if current_state == ConversationState.INITIAL:
         if message_type == "text" and message.startswith("order from group:"):
             # New conversation from click-to-chat link
             await send_welcome_message(phone_number, group, whatsapp_service)
-            session.update_state(ConversationState.WELCOME)
-            db.commit()
+            sm.welcome()
             return
         else:
             # We're in INITIAL state but didn't get an initial group message
-            # This might be a continuation of an existing conversation
-            # Move to IDLE state and proceed with intent detection
-            session.update_state(ConversationState.IDLE)
-            db.commit()
+            sm.skip_to_idle()
     
-    # STEP 2: Handle primary menu options and commands
     # Detect intent from message or button press
     intent = detect_customer_intent(message, message_type, button_id, current_state)
     
-    # Handle detected intent
+    # Handle state transitions based on intent
     if intent == "place_order":
-        # User wants to place an order
-        place_order_msg = "Please type your order details, including:\n\n"
-        place_order_msg += "- Item names\n- Quantities\n- Any special requests\n\n"
-        place_order_msg += "Example: 2 t-shirts size L, 1 hoodie black size XL"
-        
-        whatsapp_service.send_text_message(phone_number, place_order_msg)
-        session.update_state(ConversationState.AWAITING_ORDER_DETAILS)
-        db.commit()
+        if sm.start_order():
+            place_order_msg = "Please type your order details, including:\n\n"
+            place_order_msg += "- Item names\n- Quantities\n- Any special requests\n\n"
+            place_order_msg += "Example: 2 t-shirts size L, 1 hoodie black size XL"
+            whatsapp_service.send_text_message(phone_number, place_order_msg)
         return
         
     elif intent == "track_order":
-        # User wants to track orders
-        await handle_track_order(phone_number, customer.id, db, whatsapp_service)
-        session.update_state(ConversationState.IDLE)
-        db.commit()
+        await sm.track_orders()
         return
         
     elif intent == "cancel_order":
-        # User wants to cancel an order
-        await handle_cancel_order(phone_number, customer.id, db, whatsapp_service)
-        session.update_state(ConversationState.IDLE)
-        db.commit()
+        await sm.cancel_order()
         return
         
     elif intent == "contact_support":
-        # User wants to contact support
-        await handle_contact_support(phone_number, group, whatsapp_service)
-        session.update_state(ConversationState.WAITING_FOR_SUPPORT)
-        db.commit()
+        await sm.contact_support()
         return
     
     elif intent == "mpesa_payment":
-        # User indicates they want to pay with M-Pesa
-        mpesa_msg = "Please send your payment to our M-Pesa number and then share the transaction message/code/confirmation with us."
-        whatsapp_service.send_text_message(phone_number, mpesa_msg)
-        session.update_state(ConversationState.AWAITING_PAYMENT_CONFIRMATION)
-        db.commit()
+        if sm.mpesa_selected():
+            mpesa_msg = "Please send your payment to our M-Pesa number and then share the transaction message/code/confirmation with us."
+            whatsapp_service.send_text_message(phone_number, mpesa_msg)
         return
         
     elif intent == "cash_payment":
-        # User wants to pay with cash on delivery
-        await handle_cash_payment(phone_number, customer.id, db, whatsapp_service)
-        session.update_state(ConversationState.IDLE)
-        db.commit()
+        await sm.cash_selected()
         return
     
-    # STEP 3: Handle state-specific message processing
+    # Handle state-specific message processing
     if current_state == ConversationState.AWAITING_ORDER_DETAILS:
         # User is providing order details
         if message_type == "text" and len(message) > 5:
-            await create_order(phone_number, customer.id, group_id, message, db, whatsapp_service)
-            session.update_state(ConversationState.AWAITING_PAYMENT)
-            db.commit()
+            await sm.order_received()
             return
         else:
             # Not enough detail, ask again
+            sm.order_invalid()
             whatsapp_service.send_text_message(
                 phone_number, 
                 "Please provide more details about your order. Include items, quantities, and any special requests."
@@ -240,25 +371,24 @@ async def handle_customer_message_with_context(customer, event_data, db, current
     elif current_state == ConversationState.AWAITING_PAYMENT_CONFIRMATION:
         # User is providing payment confirmation
         if is_mpesa_message(message, message_type):
-            await handle_mpesa_confirmation(phone_number, customer.id, message, db, whatsapp_service)
-            session.update_state(ConversationState.IDLE)
-            db.commit()
+            await sm.payment_confirmed()
             return
     
     elif current_state == ConversationState.WELCOME:
         # We sent welcome message but didn't get a valid menu selection
         # Send default options
         send_default_options(phone_number, whatsapp_service)
-        session.update_state(ConversationState.IDLE)
-        db.commit()
+        sm.to_idle()
         return
     
     # If we reach here, we couldn't determine what to do
     # Send default options
     send_default_options(phone_number, whatsapp_service)
-    session.update_state(ConversationState.IDLE)
-    db.commit()
+    if current_state != ConversationState.IDLE:
+        sm.reset()
 
+
+# Keep all existing helper functions unchanged
 def detect_customer_intent(message, message_type, button_id, current_state, completed_order=False):
     """
     Detect customer intent from message content and type

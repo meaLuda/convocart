@@ -87,3 +87,4 @@ urllib3==2.4.0
     # via requests
 uvicorn==0.34.2
     # via orderbot
+transitions

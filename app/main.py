@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pathlib import Path
 import uvicorn
-from app.database import engine, Base, get_db
-from app.routers import users, webhook
+# from app.database import engine, Base, get_db
+# from app.routers import users, webhook
 from app.config import HOST, PORT, DEBUG, SUPER_ADMIN_USERNAME, SUPER_ADMIN_PASSWORD
 from app import models
 
@@ -46,9 +46,9 @@ app.add_middleware(
 # Mount static files
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
-# Include routers
-app.include_router(webhook.router, tags=["webhook"])
-app.include_router(users.router, tags=["admin"])
+# # Include routers
+# app.include_router(webhook.router, tags=["webhook"])
+# app.include_router(users.router, tags=["admin"])
 
 # Initialize templates
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
@@ -60,36 +60,36 @@ def get_password_hash(password):
 @app.on_event("startup")
 async def startup_event():
     # Create database tables
-    Base.metadata.create_all(bind=engine)
+    # Base.metadata.create_all(bind=engine)
     logger.info(f"Debug: {DEBUG}")
-    
-    # Create default admin user if not exists
-    db = next(get_db())
-    admin = db.query(models.User).filter(models.User.username == SUPER_ADMIN_USERNAME).first()
-    
-    if not admin:
-        try:
-            # Create default super admin user with properly hashed password
-            admin = models.User(
-                username=SUPER_ADMIN_USERNAME,
-                password_hash=get_password_hash(SUPER_ADMIN_PASSWORD),
-                role=models.UserRole.SUPER_ADMIN,
-                is_active=True,
-                full_name="System Administrator"
-            )
-            db.add(admin)
-            db.commit()
-            logger.info("Created default super admin user")
-        except Exception as e:
-            logger.error(f"Error creating default admin user: {str(e)}")
-            db.rollback()
-    else:
-        # Check if the existing user is a super admin
-        if admin.role != models.UserRole.SUPER_ADMIN:
-            # Update to super admin role if not already
-            admin.role = models.UserRole.SUPER_ADMIN
-            db.commit()
-            logger.info("Updated default user to super admin role")
+
+    # # Create default admin user if not exists
+    # db = next(get_db())
+    # admin = db.query(models.User).filter(models.User.username == SUPER_ADMIN_USERNAME).first()
+
+    # if not admin:
+    #     try:
+    #         # Create default super admin user with properly hashed password
+    #         admin = models.User(
+    #             username=SUPER_ADMIN_USERNAME,
+    #             password_hash=get_password_hash(SUPER_ADMIN_PASSWORD),
+    #             role=models.UserRole.SUPER_ADMIN,
+    #             is_active=True,
+    #             full_name="System Administrator"
+    #         )
+    #         db.add(admin)
+    #         db.commit()
+    #         logger.info("Created default super admin user")
+    #     except Exception as e:
+    #         logger.error(f"Error creating default admin user: {str(e)}")
+    #         db.rollback()
+    # else:
+    #     # Check if the existing user is a super admin
+    #     if admin.role != models.UserRole.SUPER_ADMIN:
+    #         # Update to super admin role if not already
+    #         admin.role = models.UserRole.SUPER_ADMIN
+    #         db.commit()
+    #         logger.info("Updated default user to super admin role")
 
 @app.get("/")
 async def root(request: Request):

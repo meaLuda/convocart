@@ -1,3 +1,4 @@
+# app/database.py
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -48,24 +49,27 @@ def create_db_engine_with_retry():
     raise last_exception
 
 # Initialize engine
-try:
-    engine = create_db_engine_with_retry()
-except Exception as e:
-    logger.error(f"Failed to initialize database engine: {str(e)}")
-    raise
+engine = None
+if DATABASE_URI_POSTGRES:
+    try:
+        engine = create_db_engine_with_retry()
+    except Exception as e:
+        logger.error(f"Failed to initialize database engine: {str(e)}")
+        raise
 
-# Add event listeners for connection pooling
-@event.listens_for(engine, "connect")
-def connect(dbapi_connection, connection_record):
-    logger.debug("Database connection established")
+if engine:
+    # Add event listeners for connection pooling
+    @event.listens_for(engine, "connect")
+    def connect(dbapi_connection, connection_record):
+        logger.debug("Database connection established")
 
-@event.listens_for(engine, "checkout")
-def checkout(dbapi_connection, connection_record, connection_proxy):
-    logger.debug("Database connection checked out from pool")
+    @event.listens_for(engine, "checkout")
+    def checkout(dbapi_connection, connection_record, connection_proxy):
+        logger.debug("Database connection checked out from pool")
 
-@event.listens_for(engine, "checkin")
-def checkin(dbapi_connection, connection_record):
-    logger.debug("Database connection returned to pool")
+    @event.listens_for(engine, "checkin")
+    def checkin(dbapi_connection, connection_record):
+        logger.debug("Database connection returned to pool")
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
