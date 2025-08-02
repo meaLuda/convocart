@@ -1,9 +1,11 @@
-# app/services/whatsapp.py
 import json
 import logging
 import requests
 from typing import Dict, Any, Optional, List
-from app.config import WHATSAPP_API_URL, WHATSAPP_PHONE_ID, WHATSAPP_API_TOKEN
+from app.config import get_settings
+
+settings = get_settings()
+
 
 logger = logging.getLogger(__name__)
 
@@ -16,14 +18,14 @@ class WhatsAppService:
         if db:
             from app.models import Configuration
             # Get values from database with fallback to environment variables
-            api_url = Configuration.get_value(db, 'whatsapp_api_url', WHATSAPP_API_URL)
-            phone_id = Configuration.get_value(db, 'whatsapp_phone_id', WHATSAPP_PHONE_ID)
-            api_token = Configuration.get_value(db, 'whatsapp_api_token', WHATSAPP_API_TOKEN)
+            api_url = Configuration.get_value(db, 'whatsapp_api_url', settings.whatsapp_api_url )
+            phone_id = Configuration.get_value(db, 'whatsapp_phone_id',settings.whatsapp_phone_id)
+            api_token = Configuration.get_value(db, 'whatsapp_api_token', settings.whatsapp_api_token)
         else:
             # Use environment variables directly
-            api_url = WHATSAPP_API_URL
-            phone_id = WHATSAPP_PHONE_ID
-            api_token = WHATSAPP_API_TOKEN
+            api_url = settings.whatsapp_api_url
+            phone_id = settings.whatsapp_phone_id
+            api_token = settings.whatsapp_api_token
             
         # Log configuration status (without sensitive values)
         logger.info(f"WhatsApp service initialized with API URL: {api_url}")
@@ -37,10 +39,21 @@ class WhatsAppService:
             "Authorization": f"Bearer {api_token}"
         }
 
+    def _truncate_string(self, text: str, max_length: int) -> str:
+        """
+        Truncate a string to max_length, adding '...' if truncated.
+        """
+        if not isinstance(text, str):
+            return str(text)
+        if len(text) > max_length:
+            return text[:max_length - 3] + "..."
+        return text
+
     def send_text_message(self, to: str, message: str) -> Dict[str, Any]:
         """
         Send a simple text message to a WhatsApp user
         """
+        message = self._truncate_string(message, 4096) # WhatsApp text message limit
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -67,8 +80,8 @@ class WhatsAppService:
             {
                 "type": "reply",
                 "reply": {
-                    "id": button["id"],
-                    "title": button["title"]
+                    "id": self._truncate_string(button["id"], 256), # Button ID limit
+                    "title": self._truncate_string(button["title"], 20) # Button title limit
                 }
             } for button in buttons
         ]
@@ -81,7 +94,7 @@ class WhatsAppService:
             "interactive": {
                 "type": "button",
                 "body": {
-                    "text": message
+                    "text": self._truncate_string(message, 1024) # Interactive message body limit
                 },
                 "action": {
                     "buttons": button_items
@@ -96,6 +109,18 @@ class WhatsAppService:
         Send an interactive list message
         sections: list of section dictionaries with 'title' and 'rows' keys
         """
+        # Truncate message body
+        message = self._truncate_string(message, 1024) # Interactive message body limit
+
+        # Truncate section and row titles/descriptions
+        for section in sections:
+            section["title"] = self._truncate_string(section["title"], 24) # Section title limit
+            for row in section.get("rows", []):
+                row["id"] = self._truncate_string(row["id"], 256) # Row ID limit
+                row["title"] = self._truncate_string(row["title"], 24) # Row title limit
+                if "description" in row:
+                    row["description"] = self._truncate_string(row["description"], 72) # Row description limit
+
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -119,22 +144,21 @@ class WhatsAppService:
         """
         Send an order confirmation message with enhanced details and KSH currency
         """
-        # Format order items nicely if provided as JSON
         items_text = ""
         items = order_details.get('items', [])
-        order_number = order_details.get('order_number', 'N/A')
+        order_number = self._truncate_string(order_details.get('order_number', 'N/A'), 20) # Order number limit
         total_amount = order_details.get('total_amount', 0)
-        group_name = order_details.get('group_name', 'Our store')
+        group_name = self._truncate_string(order_details.get('group_name', 'Our store'), 100) # Group name limit
         
         if isinstance(items, list):
             for i, item in enumerate(items, 1):
-                name = item.get('name', 'Unknown item')
+                name = self._truncate_string(item.get('name', 'Unknown item'), 50) # Item name limit
                 quantity = item.get('quantity', 1)
                 price = item.get('price', 0)
                 items_text += f"{i}. {name} x{quantity} - KSH {price:.2f}\n"
         else:
             # Just use the raw text if not in expected format
-            items_text = str(items)
+            items_text = self._truncate_string(str(items), 1000) # Items text limit
         
         confirmation_text = f"📝 *ORDER SAVED*\n"
         confirmation_text += f"Order #: {order_number}\n"
@@ -161,9 +185,9 @@ class WhatsAppService:
         """
         Send a payment confirmation message with enhanced details
         """
-        payment_method = payment_details.get('method', 'Unknown')
-        order_number = payment_details.get('order_number', 'N/A')
-        payment_ref = payment_details.get('payment_ref', 'N/A')
+        payment_method = self._truncate_string(payment_details.get('method', 'Unknown'), 50) # Payment method limit
+        order_number = self._truncate_string(payment_details.get('order_number', 'N/A'), 20) # Order number limit
+        payment_ref = self._truncate_string(payment_details.get('payment_ref', 'N/A'), 50) # Payment ref limit
         amount = payment_details.get('amount', 0)
         
         if payment_method == 'mpesa':
@@ -196,14 +220,14 @@ class WhatsAppService:
         """
         Send a comprehensive order status update message
         """
-        order_number = order_data.get('order_number', 'N/A')
+        order_number = self._truncate_string(order_data.get('order_number', 'N/A'), 20) # Order number limit
         status = order_data.get('status', 'unknown')
-        group_name = order_data.get('group_name', 'Our store')
+        group_name = self._truncate_string(order_data.get('group_name', 'Our store'), 100) # Group name limit
         total_amount = order_data.get('total_amount', 0)
-        payment_method = order_data.get('payment_method', '')
-        payment_status = order_data.get('payment_status', '')
-        payment_ref = order_data.get('payment_ref', '')
-        order_details = order_data.get('order_details', '')
+        payment_method = self._truncate_string(order_data.get('payment_method', ''), 50) # Payment method limit
+        payment_status = self._truncate_string(order_data.get('payment_status', ''), 50) # Payment status limit
+        payment_ref = self._truncate_string(order_data.get('payment_ref', ''), 50) # Payment ref limit
+        order_details = self._truncate_string(order_data.get('order_details', ''), 1000) # Order details limit
         created_at = order_data.get('created_at', '')
         
         # Status emoji mapping
@@ -266,10 +290,10 @@ class WhatsAppService:
         """
         Send a payment status update notification
         """
-        order_number = payment_data.get('order_number', 'N/A')
-        payment_status = payment_data.get('payment_status', 'unknown')
-        payment_method = payment_data.get('payment_method', '')
-        payment_ref = payment_data.get('payment_ref', '')
+        order_number = self._truncate_string(payment_data.get('order_number', 'N/A'), 20) # Order number limit
+        payment_status = self._truncate_string(payment_data.get('payment_status', 'unknown'), 50) # Payment status limit
+        payment_method = self._truncate_string(payment_data.get('payment_method', ''), 50) # Payment method limit
+        payment_ref = self._truncate_string(payment_data.get('payment_ref', ''), 50) # Payment ref limit
         amount = payment_data.get('amount', 0)
         
         # Payment status emoji mapping

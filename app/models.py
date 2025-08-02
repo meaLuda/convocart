@@ -1,9 +1,8 @@
-# app/models.py
 from datetime import datetime, timedelta
 import enum
 import json
 from sqlalchemy.orm import Session
-from sqlalchemy import JSON, Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, Enum, Table, UniqueConstraint,func
+from sqlalchemy import JSON, Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, Enum, Table, TypeDecorator, UniqueConstraint,func
 from sqlalchemy.orm import relationship, validates
 from sqlalchemy.ext.declarative import declared_attr
 from app.database import Base
@@ -11,6 +10,23 @@ import re
 import secrets
 import string
 
+
+class JsonGettable(TypeDecorator):
+    """
+    Custom JSON type for SQLite compatibility.
+    Strores data as a JSON string in a TEXT column.
+    """
+    impl = Text
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            return json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            return json.loads(value)
+        
+        
 # Base mixin for common fields
 class TimestampMixin:
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -102,7 +118,7 @@ class User(Base, TimestampMixin):
         alphabet = string.ascii_letters + string.digits
         token = ''.join(secrets.choice(alphabet) for _ in range(50))
         self.reset_token = token
-        self.reset_token_expires_at = datetime.utcnow() + datetime.timedelta(hours=expires_in_hours)
+        self.reset_token_expires_at = datetime.utcnow() + timedelta(hours=expires_in_hours)
         return token
 
 class Customer(Base, TimestampMixin):
@@ -178,8 +194,8 @@ class Configuration(Base):
     key = Column(String(255), unique=True, index=True, nullable=False)
     value = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     
     @staticmethod
     def get_value(db: Session, key: str, default_value: str = None) -> str:
@@ -222,6 +238,8 @@ class Order(Base, TimestampMixin):
     payment_method = Column(Enum(PaymentMethod), nullable=True)
     payment_ref = Column(String(50), nullable=True)     # Payment reference/transaction code i.e MPESA code
     payment_status = Column(Enum(PaymentStatus), default=PaymentStatus.UNPAID, nullable=False)
+    last_notification_sent = Column(DateTime, nullable=True)
+    notification_count = Column(Integer, default=0)
     
     # Relationships
     customer = relationship("Customer", back_populates="orders")
@@ -237,6 +255,22 @@ class Order(Base, TimestampMixin):
         timestamp = datetime.utcnow().strftime('%Y%m%d')
         random_part = ''.join(secrets.choice(string.digits) for _ in range(4))
         return f"ORD-{timestamp}-{random_part}"
+
+    def can_send_notification(self, interval_minutes=5):
+        """Check if a notification can be sent to avoid spamming."""
+        if not self.last_notification_sent:
+            return True
+        
+        time_since_last_sent = datetime.utcnow() - self.last_notification_sent
+        if time_since_last_sent > timedelta(minutes=interval_minutes):
+            return True
+        
+        return False
+
+    def record_notification(self):
+        """Record that a notification has been sent."""
+        self.last_notification_sent = datetime.utcnow()
+        self.notification_count = (self.notification_count or 0) + 1
 
 
 class ConversationState(str, Enum):
@@ -261,11 +295,11 @@ class ConversationSession(Base):
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
     current_state = Column(String(50), default=ConversationState.INITIAL)
-    context_data = Column(JSON, nullable=True)  # Stores JSON data related to current conversation
+    context_data = Column(JsonGettable, nullable=True) # Stores JSON data related to current conversation
     last_interaction = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
     customer = relationship("Customer", back_populates="conversation_sessions")

@@ -1,16 +1,17 @@
-tw_watch:
-	@npx tailwindcss -i ./app/static/css/input.css -o ./app/static/css/output.css --watch
-
 # Variables
+PYTHON = python
 CONTAINER_NAME = orderbot
 IMAGE_NAME = orderbot-image
 PORT = 8080
 
-# Build Docker image
+# Tailwind CSS
+tw_watch:
+	@npx tailwindcss -i ./app/static/css/input.css -o ./app/static/css/output.css --watch
+
+# Docker Commands
 build:
 	docker build -t $(IMAGE_NAME) .
 
-# Start container with volume mounting for live code updates
 start:
 	docker run -d --name $(CONTAINER_NAME) \
 		-p $(PORT):$(PORT) \
@@ -19,19 +20,15 @@ start:
 		$(IMAGE_NAME)
 	@echo "Container started. Access at http://localhost:$(PORT)"
 
-# Stop the container
 stop:
 	docker stop $(CONTAINER_NAME)
 	docker rm $(CONTAINER_NAME)
 
-# Restart container (for config changes that need container restart)
 restart: stop start
 
-# Enter the container shell
 shell:
-	docker exec -it $(CONTAINER_NAME) /bin/bash
+	$(CONTAINER_NAME) /bin/bash
 
-# Complete rebuild - remove everything and start fresh
 fresh: 
 	-docker stop $(CONTAINER_NAME)
 	-docker rm $(CONTAINER_NAME)
@@ -44,20 +41,36 @@ fresh:
 		$(IMAGE_NAME)
 	@echo "Fresh container started. Access at http://localhost:$(PORT)"
 
-# View logs
 logs:
 	docker logs -f $(CONTAINER_NAME)
 
+# Alembic Migrations
+alembic_init:
+	$(PYTHON) -m alembic init alembic
 
-# Help command
+alembic_revision:
+	$(PYTHON) -m alembic revision --autogenerate -m "New migration"
+
+alembic_upgrade:
+	$(PYTHON) -m alembic upgrade head
+
+alembic_downgrade:
+	$(PYTHON) -m alembic downgrade -1
+
+# Help
 help:
 	@echo "Available commands:"
-	@echo "  make build         - Build Docker image"
-	@echo "  make start         - Start container with volume mounting"
-	@echo "  make stop          - Stop and remove the container"
-	@echo "  make restart       - Restart the container (for code changes)"
-	@echo "  make shell         - Enter container shell"
-	@echo "  make fresh         - Complete rebuild (remove and recreate everything)"
-	@echo "  make logs          - View container logs"
+	@echo "  make tw_watch          - Watch for Tailwind CSS changes"
+	@echo "  make build             - Build Docker image"
+	@echo "  make start             - Start container with volume mounting"
+	@echo "  make stop              - Stop and remove the container"
+	@echo "  make restart           - Restart the container (for code changes)"
+	@echo "  make shell             - Enter container shell"
+	@echo "  make fresh             - Complete rebuild (remove and recreate everything)"
+	@echo "  make logs              - View container logs"
+	@echo "  make alembic_init      - Initialize Alembic (run once)"
+	@echo "  make alembic_revision  - Create a new migration"
+	@echo "  make alembic_upgrade   - Apply all pending migrations"
+	@echo "  make alembic_downgrade - Revert the last migration"
 
-.PHONY: build start stop restart shell fresh logs help
+.PHONY: tw_watch build start stop restart shell fresh logs alembic_init alembic_revision alembic_upgrade alembic_downgrade help

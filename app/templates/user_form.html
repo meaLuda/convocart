@@ -158,19 +158,33 @@
 
 {% block scripts %}
 <script>
-// Copy to clipboard function
-function copyToClipboard(elementId) {
-    const element = document.getElementById(elementId);
-    element.select();
-    document.execCommand('copy');
-    
-    // Show a brief "Copied!" message
-    const originalValue = element.value;
-    element.value = "Copied!";
-    setTimeout(() => {
-        element.value = originalValue;
-    }, 1000);
-}
+document.addEventListener('DOMContentLoaded', function() {
+    const userForm = document.querySelector('form');
+    if (userForm) {
+        userForm.addEventListener('submit', function(e) {
+            const submitButton = userForm.querySelector('button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> {{ "Updating" if user else "Creating" }}...';
+            }
+        });
+    }
+
+    // Copy to clipboard function for reset token
+    window.copyToClipboard = function(elementId) {
+        const element = document.getElementById(elementId);
+        if (!element) return;
+        element.select();
+        document.execCommand('copy');
+        
+        const copyButton = element.nextElementSibling;
+        const originalHtml = copyButton.innerHTML;
+        copyButton.textContent = 'Copied!';
+        setTimeout(() => {
+            copyButton.innerHTML = originalHtml;
+        }, 1500);
+    }
+});
 
 // Validate email format when changing
 document.getElementById('email').addEventListener('change', function() {

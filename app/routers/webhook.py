@@ -1,4 +1,3 @@
-# routes/webhook.py
 import json
 import logging
 import re
@@ -9,9 +8,11 @@ from sqlalchemy.orm import Session
 from transitions import Machine
 from app.database import get_db
 from app.services.whatsapp import WhatsAppService
-from app.config import WEBHOOK_VERIFY_TOKEN
 from app import models
 from app.models import ConversationState
+from app.config import get_settings
+
+SETTINGS = get_settings()
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ class ConversationStateMachine:
         ]
         
         # Initialize the machine
-        initial = initial_state or session.current_state.value
+        initial = initial_state or session.current_state
         self.machine = Machine(
             model=self,
             states=states,
@@ -168,7 +169,7 @@ async def verify_webhook(
     """
     Verify the webhook endpoint for WhatsApp
     """
-    if hub_mode == "subscribe" and hub_verify_token == WEBHOOK_VERIFY_TOKEN:
+    if hub_mode == "subscribe" and hub_verify_token == SETTINGS.webhook_verify_token:
         logger.info("Webhook verified successfully")
         return int(hub_challenge)
     
@@ -213,7 +214,10 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
         # Check if this is the initial click-to-chat message which contains the group info
         if message_type == "text" and message.startswith("order from group:"):
             group_identifier = message.replace("order from group:", "").strip()
-            logger.info(f"Looking for group with identifier: {group_identifier}")
+            # Sanitize the group_identifier
+            group_identifier = group_identifier.lower().replace(" ", "-")
+            group_identifier = re.sub(r'[^a-z0-9_-]', '', group_identifier)
+            logger.info(f"Looking for group with sanitized identifier: {group_identifier}")
             
             group = db.query(models.Group).filter(
                 models.Group.identifier == group_identifier,
@@ -248,7 +252,7 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
                     # Override the state to INITIAL since this is a new group interaction
                     session.update_state(ConversationState.INITIAL)
                     db.commit()
-        
+            
         # If we still don't have a customer record, we can't proceed
         if not customer:
             logger.warning(f"No customer found and couldn't create one. Sending help message to {phone_number}")
@@ -294,7 +298,7 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         customer=customer,
         db=db,
         whatsapp_service=whatsapp_service,
-        initial_state=session.current_state.value
+        initial_state=session.current_state
     )
     
     # Set event data
@@ -309,7 +313,7 @@ async def handle_customer_message_with_context(customer, event_data, db, current
     current_state = session.current_state
     
     # INITIAL state handling
-    if current_state == ConversationState.INITIAL:
+    if current_state == ConversationState.INITIAL.value:
         if message_type == "text" and message.startswith("order from group:"):
             # New conversation from click-to-chat link
             await send_welcome_message(phone_number, group, whatsapp_service)
@@ -354,7 +358,7 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         return
     
     # Handle state-specific message processing
-    if current_state == ConversationState.AWAITING_ORDER_DETAILS:
+    if current_state == ConversationState.AWAITING_ORDER_DETAILS.value:
         # User is providing order details
         if message_type == "text" and len(message) > 5:
             await sm.order_received()
@@ -368,13 +372,13 @@ async def handle_customer_message_with_context(customer, event_data, db, current
             )
             return
     
-    elif current_state == ConversationState.AWAITING_PAYMENT_CONFIRMATION:
+    elif current_state == ConversationState.AWAITING_PAYMENT_CONFIRMATION.value:
         # User is providing payment confirmation
         if is_mpesa_message(message, message_type):
             await sm.payment_confirmed()
             return
     
-    elif current_state == ConversationState.WELCOME:
+    elif current_state == ConversationState.WELCOME.value:
         # We sent welcome message but didn't get a valid menu selection
         # Send default options
         send_default_options(phone_number, whatsapp_service)
@@ -384,7 +388,7 @@ async def handle_customer_message_with_context(customer, event_data, db, current
     # If we reach here, we couldn't determine what to do
     # Send default options
     send_default_options(phone_number, whatsapp_service)
-    if current_state != ConversationState.IDLE:
+    if current_state != ConversationState.IDLE.value:
         sm.reset()
 
 
@@ -665,6 +669,10 @@ async def handle_mpesa_confirmation(phone_number, customer_id, message, db, what
         if match:
             transaction_code = match.group(0)
             logger.info(f"Extracted transaction code: {transaction_code}")
+
+    # Validate transaction_code length
+    if len(transaction_code) > 50:
+        raise HTTPException(status_code=400, detail="Transaction code too long (max 50 characters)")
     
     # Find the customer's most recent pending order
     last_order = db.query(models.Order).filter(
@@ -708,6 +716,11 @@ async def create_order(phone_number, customer_id, group_id, message, db, whatsap
     """Create a new order from customer details with improved notifications"""
     try:
         logger.info(f"Creating new order for customer {customer_id} in group {group_id}")
+        
+        # Validate message length for order_details
+        if len(message) > 1000:
+            raise HTTPException(status_code=400, detail="Order details too long (max 1000 characters)")
+
         # Create a new order with the text as details
         order = models.Order(
             customer_id=customer_id,

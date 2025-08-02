@@ -1,7 +1,7 @@
-# app/routers/users.py
 import json
 import logging
 from datetime import datetime, timedelta
+import re
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -10,11 +10,14 @@ from fastapi.templating import Jinja2Templates
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.config import SECRET_KEY, WHATSAPP_PHONE_NUMBER
 from app import models
 from pathlib import Path
 from urllib.parse import quote
 from passlib.context import CryptContext  # Added for password hashing
+from app.config import get_settings
+
+settings = get_settings()
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -28,6 +31,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="admin/login")
 # JWT settings
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
+WHATSAPP_PHONE_NUMBER = settings.whatsapp_phone_number
+WHATSAPP_API_URL = settings.whatsapp_api_url
+WHATSAPP_PHONE_ID = settings.whatsapp_phone_id
+WHATSAPP_API_TOKEN = settings.whatsapp_api_token
+WHATSAPP_VERIFY_TOKEN = settings.webhook_verify_token
+WEBHOOK_VERIFY_TOKEN = settings.webhook_verify_token
 
 # Password context for hashing and verification
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -60,7 +69,7 @@ async def get_current_admin(
         token = token[7:]
     
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         username: str = payload.get("sub")
         if username is None:
             return RedirectResponse(url="/admin/login", status_code=303)
@@ -101,7 +110,7 @@ async def login(
             expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         
         to_encode.update({"exp": expire})
-        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
         return encoded_jwt
     
     user = db.query(models.User).filter(models.User.username == form_data.username).first()
@@ -337,6 +346,8 @@ async def update_order_status(
         
         # Update payment reference if provided
         if payment_ref:
+            if len(payment_ref) > 50:
+                raise HTTPException(status_code=400, detail="Payment reference too long (max 50 characters)")
             order.payment_ref = payment_ref
         
         # Update total amount if provided
@@ -402,10 +413,10 @@ async def update_order_status(
                             
                             if order.payment_status:
                                 order_data["payment_status"] = order.payment_status.value.title()
-                                
+                            
                             if order.payment_ref:
                                 order_data["payment_ref"] = order.payment_ref
-                        
+            
                         # Send order status update notification
                         whatsapp_service.send_order_status_update(
                             customer.phone_number,
@@ -490,7 +501,7 @@ async def list_groups(
     total_pages = (total_groups + page_size - 1) // page_size
     
     # Get the WhatsApp phone number without the "+" for the link
-    whatsapp_phone = WHATSAPP_PHONE_NUMBER
+    whatsapp_phone = settings.whatsapp_phone_number
     if whatsapp_phone and whatsapp_phone.startswith("+"):
         whatsapp_phone = whatsapp_phone[1:]
     
@@ -579,14 +590,19 @@ async def create_group(
     current_admin = await get_current_admin(request, db)
     if isinstance(current_admin, RedirectResponse):
         return current_admin
+    
+    # Sanitize the identifier
+    sanitized_identifier = identifier.lower().replace(" ", "-")
+    sanitized_identifier = re.sub(r'[^a-z0-9_-]', '', sanitized_identifier)
+    
     # Check if identifier already exists
-    existing = db.query(models.Group).filter(models.Group.identifier == identifier).first()
+    existing = db.query(models.Group).filter(models.Group.identifier == sanitized_identifier).first()
     if existing:
         raise HTTPException(status_code=400, detail="Group identifier already exists")
     
     group = models.Group(
         name=name,
-        identifier=identifier,
+        identifier=sanitized_identifier,
         description=description,
         category=category,
         welcome_message=welcome_message,
@@ -626,18 +642,23 @@ async def update_group(
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
     
+    # Sanitize the identifier
+    sanitized_identifier = identifier.lower().replace(" ", "-")
+    sanitized_identifier = re.sub(r'[^a-z0-9_-]', '', sanitized_identifier)
+    
     # Check if identifier already exists (for another group)
     existing = db.query(models.Group).filter(
-        models.Group.identifier == identifier,
+        models.Group.identifier == sanitized_identifier,
         models.Group.id != group_id
     ).first()
     if existing:
         raise HTTPException(status_code=400, detail="Group identifier already exists")
     
-   
+    
     # Update group - store JSON as string for SQLite compatibility
     group.name = name
-    group.identifier = identifier
+    group.identifier = sanitized_identifier,
+    group.description = description,
     group.description = description
     group.category = category
     group.welcome_message = welcome_message
@@ -696,26 +717,43 @@ async def delete_group(
     db: Session = Depends(get_db)
 ):
     """
-    Delete a group
+    Delete a group if it has no associated orders.
+    If it has orders, it will be marked as inactive.
     """
     # Get the current admin user
     current_admin = await get_current_admin(request, db)
     if isinstance(current_admin, RedirectResponse):
         return current_admin
+
     # Get the group
     group = db.query(models.Group).filter(models.Group.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
-    
+
     # Check permissions - only allow super admins or admins assigned to this group
     if current_admin.role != models.UserRole.SUPER_ADMIN:
         if group not in current_admin.groups:
-            raise HTTPException(status_code=403, detail="You don't have permission to delete this group")
-    
-    # Delete the group
-    db.delete(group)
-    db.commit()
-    
+            raise HTTPException(status_code=403, detail="You don't have permission to modify this group")
+
+    # Check for associated orders
+    order_count = db.query(models.Order).filter(models.Order.group_id == group_id).count()
+
+    if order_count > 0:
+        # If there are orders, soft delete by making it inactive
+        group.is_active = False
+        group.name = f"{group.name} (Archived)"
+        # Remove user associations to hide it from client admins
+        group.users = []
+        db.commit()
+        logger.info(f"Group '{group.identifier}' archived due to existing orders.")
+    else:
+        # If no orders, proceed with deletion
+        # First, delete related customers to avoid foreign key violations
+        db.query(models.Customer).filter(models.Customer.group_id == group_id).delete(synchronize_session=False)
+        db.delete(group)
+        db.commit()
+        logger.info(f"Group '{group.identifier}' and its customers deleted.")
+
     return RedirectResponse(url="/admin/groups", status_code=303)
 
 @router.get("/admin/settings", response_class=HTMLResponse)
@@ -759,23 +797,18 @@ async def settings_page(
                 description = ""
                 
                 if key == 'whatsapp_phone_number':
-                    from app.config import WHATSAPP_PHONE_NUMBER
                     default_value = WHATSAPP_PHONE_NUMBER.replace('+', '') if WHATSAPP_PHONE_NUMBER else ''
                     description = 'WhatsApp Business Phone Number (without + prefix)'
                 elif key == 'whatsapp_api_url':
-                    from app.config import WHATSAPP_API_URL
                     default_value = WHATSAPP_API_URL or ''
                     description = 'WhatsApp API URL'
                 elif key == 'whatsapp_phone_id':
-                    from app.config import WHATSAPP_PHONE_ID
                     default_value = WHATSAPP_PHONE_ID or ''
                     description = 'WhatsApp Phone ID'
                 elif key == 'whatsapp_api_token':
-                    from app.config import WHATSAPP_API_TOKEN
                     default_value = WHATSAPP_API_TOKEN or ''
                     description = 'WhatsApp API Token'
                 elif key == 'webhook_verify_token':
-                    from app.config import WEBHOOK_VERIFY_TOKEN
                     default_value = WEBHOOK_VERIFY_TOKEN or ''
                     description = 'Webhook Verification Token'
                 elif key == 'business_name':
@@ -835,6 +868,10 @@ async def update_settings(
         for key, value in form_data.items():
             if key.startswith('config_'):
                 config_key = key.replace('config_', '')
+                if len(config_key) > 255:
+                    raise HTTPException(status_code=400, detail=f"Configuration key '{config_key}' too long (max 255 characters)")
+                if len(value) > 10000: # Assuming a reasonable max length for text config values
+                    raise HTTPException(status_code=400, detail=f"Configuration value for '{config_key}' too long (max 10000 characters)")
                 models.Configuration.set_value(db, config_key, value)
                 updated_count += 1
         
@@ -987,8 +1024,8 @@ async def link_generator(
         whatsapp_phone = models.Configuration.get_value(db, 'whatsapp_phone_number', '')
         
         # If no phone number in database, try to get from environment
-        if not whatsapp_phone and WHATSAPP_PHONE_NUMBER:
-            whatsapp_phone = WHATSAPP_PHONE_NUMBER
+        if not whatsapp_phone and settings.whatsapp_phone_number:
+            whatsapp_phone = settings.whatsapp_phone_number
             if whatsapp_phone.startswith("+"):
                 whatsapp_phone = whatsapp_phone[1:]
             
@@ -1147,7 +1184,14 @@ async def create_user(
     
     # Get selected groups
     group_ids = form_data.getlist("groups")
-    
+
+    # Add validation for client_admin role
+    if role == models.UserRole.CLIENT_ADMIN.value and not group_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="A Client Admin must be assigned to at least one group."
+        )
+
     # Basic validation
     if not username or not password or not role:
         raise HTTPException(status_code=400, detail="Missing required fields")
@@ -1263,7 +1307,14 @@ async def update_user(
     
     # Get selected groups
     group_ids = form_data.getlist("groups")
-    
+
+    # Add validation for client_admin role
+    if role == models.UserRole.CLIENT_ADMIN.value and not group_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="A Client Admin must be assigned to at least one group."
+        )
+
     # Basic validation
     if not username or not role:
         raise HTTPException(status_code=400, detail="Missing required fields")
@@ -1411,5 +1462,5 @@ async def delete_user(
     # Delete the user
     db.delete(user)
     db.commit()
-    
+
     return RedirectResponse(url="/admin/users", status_code=303)
