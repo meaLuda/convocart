@@ -223,6 +223,8 @@ async def view_orders(
     request: Request,
     status: Optional[str] = None,
     page: int = 1,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -260,6 +262,16 @@ async def view_orders(
         except ValueError:
             # Invalid status, ignore filter
             pass
+
+    # Apply date range filter
+    if start_date and end_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, "%Y-%m-%d")
+            end_date_obj = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+            query = query.filter(models.Order.created_at >= start_date_obj, models.Order.created_at < end_date_obj)
+        except ValueError:
+            # Invalid date format, ignore filter
+            pass
     
     # Get total count for pagination
     total_orders = query.count()
@@ -296,6 +308,7 @@ async def view_orders(
             "order_statuses": [status.value for status in models.OrderStatus]
         }
     )
+
 
 
 def check_admin_has_access_to_group(admin, group_id, db):
@@ -461,6 +474,7 @@ async def list_groups(
     request: Request,
     category: Optional[str] = None,
     page: int = 1,
+    search: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -487,6 +501,13 @@ async def list_groups(
     # Filter groups by category if provided
     if category:
         query = query.filter(models.Group.category == category)
+
+    # Filter by search query
+    if search:
+        query = query.filter(
+            models.Group.name.ilike(f"%{search}%") |
+            models.Group.identifier.ilike(f"%{search}%")
+        )
     
     # Get total count for pagination
     total_groups = query.count()
@@ -516,9 +537,11 @@ async def list_groups(
             "total_pages": total_pages,
             "total_groups": total_groups,
             "category_filter": category,
-            "whatsapp_phone": whatsapp_phone
+            "whatsapp_phone": whatsapp_phone,
+            "search_query": search
         }
     )
+
 
 @router.get("/admin/groups/new", response_class=HTMLResponse)
 async def new_group_form(
@@ -658,7 +681,6 @@ async def update_group(
     # Update group - store JSON as string for SQLite compatibility
     group.name = name
     group.identifier = sanitized_identifier,
-    group.description = description,
     group.description = description
     group.category = category
     group.welcome_message = welcome_message

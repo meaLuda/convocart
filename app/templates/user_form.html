@@ -1,7 +1,8 @@
-<!-- app/templates/user_form.html -->
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 
 {% block title %}{{ "Edit" if user else "New" }} User | WhatsApp Order Bot{% endblock %}
+
+{% block page_title %}{{ "Edit" if user else "Create New" }} User{% endblock %}
 
 {% block content %}
 <div class="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -156,6 +157,8 @@
 </div>
 {% endif %}
 
+{% endblock %}
+
 {% block scripts %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -194,5 +197,4 @@ document.getElementById('email').addEventListener('change', function() {
     }
 });
 </script>
-{% endblock %}
 {% endblock %}

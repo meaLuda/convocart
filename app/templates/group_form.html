@@ -1,7 +1,8 @@
-<!-- app/templates/group_form.html -->
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 
 {% block title %}{{ "Edit" if group else "New" }} Group | WhatsApp Order Bot{% endblock %}
+
+{% block page_title %}{{ "Edit" if group else "Create New" }} Group{% endblock %}
 
 {% block content %}
 <div class="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -78,6 +79,7 @@
         </div>
     </form>
 </div>
+{% endblock %}
 
 {% block scripts %}
 <script>
@@ -101,5 +103,4 @@ document.getElementById('identifier').addEventListener('input', function() {
     this.dataset.manuallyEdited = 'true';
 });
 </script>
-{% endblock %}
 {% endblock %}

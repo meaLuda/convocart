@@ -24,4 +24,5 @@ dependencies = [
     "sqlalchemy-libsql>=0.2.0",
     "transitions>=0.9.3",
     "uvicorn>=0.34.2",
+    "phonenumbers>=8.13.37",
 ]

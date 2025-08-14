@@ -1,7 +1,8 @@
-<!-- app/templates/orders.html -->
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 
 {% block title %}Manage Orders | WhatsApp Order Bot{% endblock %}
+
+{% block page_title %}Orders{% endblock %}
 
 {% block content %}
 <div class="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -27,6 +28,10 @@
             <a href="/admin/orders?status=refunded" class="px-3 py-1 bg-purple-100 rounded hover:bg-purple-200 {% if status_filter == 'refunded' %}font-bold{% endif %}">
                 Refunded
             </a>
+        </div>
+        <div class="flex space-x-2">
+            <input type="text" id="daterange" class="border rounded px-2 py-1" placeholder="Select date range">
+            <button onclick="filterByDate()" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Filter</button>
         </div>
     </div>
     
@@ -187,6 +192,24 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+    new Litepicker({
+        element: document.getElementById('daterange'),
+        singleMode: false,
+        format: 'YYYY-MM-DD'
+    });
+
+    function filterByDate() {
+        const daterange = document.getElementById('daterange').value;
+        if (daterange) {
+            const [startDate, endDate] = daterange.split(' - ');
+            const url = new URL(window.location.href);
+            url.searchParams.set('start_date', startDate);
+            url.searchParams.set('end_date', endDate);
+            window.location.href = url.toString();
+        }
+    }
+</script>
 <script>
     // Debounce function to prevent multiple rapid submissions
     document.addEventListener('DOMContentLoaded', function() {

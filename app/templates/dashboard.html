@@ -1,42 +1,10 @@
-<!-- app/templates/dashboard.html -->
-{% extends "base.html" %}
+{% extends "admin_base.html" %}
 
 {% block title %}Admin Dashboard | WhatsApp Order Bot{% endblock %}
 
+{% block page_title %}Dashboard{% endblock %}
+
 {% block content %}
-    <!-- Admin navigation -->
-    <div class="mb-6">
-        <nav class="flex flex-wrap gap-2">
-            <a href="/admin/dashboard" class="btn btn-primary flex items-center">
-                <i class="fas fa-tachometer-alt mr-2"></i>
-                Dashboard
-            </a>
-            <a href="/admin/orders" class="btn btn-outline flex items-center">
-                <i class="fas fa-shopping-cart mr-2"></i>
-                Orders
-            </a>
-            <a href="/admin/groups" class="btn btn-outline flex items-center">
-                <i class="fas fa-users mr-2"></i>
-                Groups
-            </a>
-            {% if admin.role.value == 'super_admin' %}
-            <a href="/admin/users" class="btn btn-outline flex items-center">
-                <i class="fas fa-user-cog mr-2"></i>
-                Users
-            </a>
-            <a href="/admin/groups/link-generator" class="btn btn-outline flex items-center">
-                <i class="fas fa-link mr-2"></i>
-                Link Generator
-            </a>
-            {% endif %}
-
-            <a href="/admin/settings" class="btn btn-outline flex items-center">
-                <i class="fas fa-cog mr-2"></i>
-                Settings
-            </a>
-        </nav>
-    </div>
-
     <!-- Welcome section with user info -->
     <div class="card mb-6">
         <div class="flex flex-col md:flex-row items-start md:items-center justify-between">
