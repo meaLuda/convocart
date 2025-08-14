@@ -1254,7 +1254,47 @@
     }
 
     function drawExistingConnections() {
-        console.log('Drawing connections');
+        jsPlumb.ready(function() {
+            jsPlumb.setContainer("flowCanvas");
+
+            // Suspend drawing to improve performance
+            jsPlumb.batch(function() {
+                // Add endpoints for each state
+                const states = document.querySelectorAll('.state-node');
+                states.forEach(state => {
+                    jsPlumb.addEndpoint(state, {
+                        anchor: "Right",
+                        isSource: true,
+                        connector: ["Flowchart", { cornerRadius: 5 }],
+                        endpoint: "Dot",
+                        paintStyle: { fill: "#3b82f6" }
+                    });
+                    jsPlumb.addEndpoint(state, {
+                        anchor: "Left",
+                        isTarget: true,
+                        connector: ["Flowchart", { cornerRadius: 5 }],
+                        endpoint: "Dot",
+                        paintStyle: { fill: "#10b981" }
+                    });
+                });
+
+                // Draw connections for each transition
+                {% for state in flow.states %}
+                    {% for transition in state.outgoing_transitions %}
+                        jsPlumb.connect({
+                            source: "state-{{ state.id }}",
+                            target: "state-{{ transition.target_state_id }}",
+                            anchors: ["Right", "Left"],
+                            paintStyle: { stroke: "#6b7280", strokeWidth: 2 },
+                            endpoint: "Blank",
+                            overlays: [
+                                ["Arrow", { location: 1, width: 10, length: 10 }]
+                            ]
+                        });
+                    {% endfor %}
+                {% endfor %}
+            });
+        });
     }
 
     // Transition editor functions
