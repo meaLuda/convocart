@@ -14,7 +14,6 @@
     <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
     <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litepicker/dist/css/litepicker.css"/>
-    <script src="https://cdn.jsdelivr.net/npm/jsplumb@2.15.6/dist/js/jsplumb.min.js"></script>
     {% block head %}{% endblock %}
 </head>
 <body class="flex flex-col min-h-screen bg-gray-50">
@@ -44,10 +43,6 @@
                     <a href="/admin/groups" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path.startswith('/admin/groups') else '' }}">
                         <i class="fas fa-users"></i>
                         <span>Groups</span>
-                    </a>
-                    <a href="/admin/flows" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path.startswith('/admin/flows') else '' }}">
-                        <i class="fas fa-sitemap"></i>
-                        <span>Flows</span>
                     </a>
                     {% if admin.role == 'super_admin' %}
                     <a href="/admin/users" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path.startswith('/admin/users') else '' }}">
@@ -87,10 +82,6 @@
                     <a href="/admin/groups" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path.startswith('/admin/groups') else '' }}">
                         <i class="fas fa-users w-5"></i>
                         <span>Groups</span>
-                    </a>
-                    <a href="/admin/flows" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path.startswith('/admin/flows') else '' }}">
-                        <i class="fas fa-sitemap w-5"></i>
-                        <span>Flows</span>
                     </a>
                     {% if admin.role == 'super_admin' %}
                     <a href="/admin/users" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path.startswith('/admin/users') else '' }}">

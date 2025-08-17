@@ -680,7 +680,7 @@ async def update_group(
     
     # Update group - store JSON as string for SQLite compatibility
     group.name = name
-    group.identifier = sanitized_identifier,
+    group.identifier = sanitized_identifier
     group.description = description
     group.category = category
     group.welcome_message = welcome_message

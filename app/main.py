@@ -14,7 +14,7 @@ from app import models
 from app.config import get_settings
 from contextlib import asynccontextmanager
 
-from app.routers import users, webhook, flows
+from app.routers import users, webhook
 
 settings = get_settings()
 # Configure logging
@@ -100,7 +100,6 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 # # Include routers
 app.include_router(webhook.router, tags=["webhook"])
 app.include_router(users.router, tags=["admin"])
-app.include_router(flows.router, tags=["admin"])
 
 # Initialize templates
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")

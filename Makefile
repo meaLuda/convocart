@@ -1,13 +1,18 @@
 # Variables
-PYTHON = python
+PYTHON = uv 
 CONTAINER_NAME = orderbot
 IMAGE_NAME = orderbot-image
-PORT = 8080
+PORT = 2056
 
 # Tailwind CSS
 tw_watch:
 	@npx tailwindcss -i ./app/static/css/input.css -o ./app/static/css/output.css --watch
 
+run_app:
+	uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+	@echo "Starting application..."
+	@echo "Visit http://localhost:8080 to access the application"
+	@echo "Application running at http://localhost:$(PORT)"
 # Docker Commands
 build:
 	docker build -t $(IMAGE_NAME) .
