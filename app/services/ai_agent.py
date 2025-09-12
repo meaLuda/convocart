@@ -136,11 +136,26 @@ class OrderBotAgent:
         actual_tokens = 0
         
         try:
+            # Validate messages before API call
+            if not messages:
+                raise ValueError("No messages provided to LLM")
+            
+            # Check if all messages have content
+            valid_messages = []
+            for msg in messages:
+                if hasattr(msg, 'content') and msg.content and msg.content.strip():
+                    valid_messages.append(msg)
+                else:
+                    logger.warning(f"Empty or invalid message: {type(msg)} - {getattr(msg, 'content', 'no content')}")
+            
+            if not valid_messages:
+                raise ValueError("All messages are empty or invalid")
+                
             # Use invoke for synchronous call wrapped in rate limiter
-            response = self.llm.invoke(messages)
+            response = self.llm.invoke(valid_messages)
             
             # Estimate actual tokens used (rough approximation)
-            prompt_text = " ".join([msg.content for msg in messages if hasattr(msg, 'content')])
+            prompt_text = " ".join([msg.content for msg in valid_messages])
             actual_tokens = len(prompt_text.split()) * 1.3  # Rough token estimation
             
             return response
@@ -431,6 +446,17 @@ Consider the conversation context and respond with just the intent name.
                 return intent
                 
         return Intent.UNKNOWN
+    
+    def _get_business_specific_clarification(self, business_type: str, message_content: str) -> str:
+        """Get business-specific clarification prompts based on business type"""
+        if business_type and business_type.lower() in ['restaurant', 'food']:
+            return "menu_items"
+        elif business_type and business_type.lower() in ['fashion', 'clothing', 'apparel']:
+            return "size_color_style"
+        elif business_type and business_type.lower() in ['electronics', 'gadgets']:
+            return "model_specifications" 
+        else:
+            return "general_details"
     
     async def _extract_order_details(self, message: str, state: AgentState) -> Optional[Dict[str, Any]]:
         """Extract structured order details from natural language"""
