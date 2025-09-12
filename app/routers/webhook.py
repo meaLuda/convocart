@@ -35,6 +35,10 @@ async def verify_webhook(
         logger.info("Meta WhatsApp webhook verified successfully")
         return int(hub_challenge)
     
+    # For Twilio, webhook verification happens differently (via request validation)
+    # Twilio doesn't use GET requests for webhook verification
+    logger.info("Webhook GET request - likely for health check or Meta verification")
+    
     logger.warning("Webhook verification failed")
     raise HTTPException(status_code=403, detail="Verification failed")
 
@@ -44,7 +48,23 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
     Process incoming webhook events from WhatsApp (both Meta and Twilio formats)
     """
     try:
-        data = await request.json()
+        # Handle both JSON and form data from Twilio
+        content_type = request.headers.get("content-type", "")
+        
+        if "application/json" in content_type:
+            data = await request.json()
+        elif "application/x-www-form-urlencoded" in content_type:
+            # Twilio sends form data
+            form_data = await request.form()
+            data = dict(form_data)
+        else:
+            # Try JSON first, then form data as fallback
+            try:
+                data = await request.json()
+            except:
+                form_data = await request.form()
+                data = dict(form_data)
+        
         logger.info(f"Received webhook data: {data}")
         
         # Initialize WhatsApp service with database for this request

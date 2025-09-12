@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     twilio_whatsapp_number: str = Field(..., env="TWILIO_WHATSAPP_NUMBER")
     webhook_verify_token: str = Field(..., env="WEBHOOK_VERIFY_TOKEN")
     
+    # Twilio webhook validation (optional - for additional security)
+    twilio_webhook_auth_enabled: bool = Field(False, env="TWILIO_WEBHOOK_AUTH_ENABLED")
+    
     # Legacy WhatsApp API settings (keep for backwards compatibility)
     whatsapp_api_url: str = Field("", env="WHATSAPP_API_URL")
     whatsapp_phone_id: str = Field("", env="WHATSAPP_PHONE_ID")
