@@ -17,6 +17,24 @@ from contextlib import asynccontextmanager
 from app.routers import users, webhook, data_import
 
 settings = get_settings()
+
+def validate_required_settings():
+    """Validate that all required settings are present"""
+    required_fields = ['twilio_account_sid', 'twilio_auth_token', 'twilio_whatsapp_number']
+    missing_fields = []
+    
+    for field in required_fields:
+        if not getattr(settings, field, None):
+            missing_fields.append(field.upper())
+    
+    if missing_fields:
+        logger.error(f"Missing required environment variables: {', '.join(missing_fields)}")
+        logger.error("Please set these variables in your .env file or environment")
+        return False
+    
+    logger.info("✅ All required Twilio configuration validated")
+    return True
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,

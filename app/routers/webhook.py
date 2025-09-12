@@ -67,6 +67,11 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
         
         logger.info(f"Received webhook data: {data}")
         
+        # Basic webhook validation - check for required fields
+        if not data or (not data.get("MessageSid") and not data.get("object")):
+            logger.warning("Invalid webhook payload - missing required fields")
+            return {"success": False, "error": "Invalid webhook payload"}
+        
         # Initialize WhatsApp service with database for this request
         whatsapp_service_with_db = WhatsAppService(db)
         
@@ -160,6 +165,11 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
         return {"success": True, "message": "Webhook processed successfully"}
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}")
+        # Rollback any uncommitted database changes
+        try:
+            db.rollback()
+        except:
+            pass
         return {"success": False, "error": str(e)}
 
 async def handle_customer_message_with_ai_context(customer, event_data, db, current_group_id=None, whatsapp_service=None):

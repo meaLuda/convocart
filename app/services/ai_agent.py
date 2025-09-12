@@ -152,6 +152,7 @@ class OrderBotAgent:
                 raise ValueError("All messages are empty or invalid")
                 
             # Use invoke for synchronous call wrapped in rate limiter
+            # Note: Twilio LLM integration is synchronous, so we wrap in try/catch
             response = self.llm.invoke(valid_messages)
             
             # Estimate actual tokens used (rough approximation)

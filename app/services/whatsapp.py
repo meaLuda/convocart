@@ -31,10 +31,18 @@ class WhatsAppService:
         logger.info(f"Twilio WhatsApp service initialized with Number: {whatsapp_number}")
         logger.debug(f"Twilio Auth Token configured: {'Yes' if auth_token else 'No'}")
         
+        # Validate required credentials
+        if not account_sid or not auth_token or not whatsapp_number:
+            raise ValueError("Missing required Twilio credentials: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER")
+        
         # Initialize Twilio client
-        self.client = Client(account_sid, auth_token)
-        self.whatsapp_number = f"whatsapp:{whatsapp_number}"
-        self.db = db
+        try:
+            self.client = Client(account_sid, auth_token)
+            self.whatsapp_number = f"whatsapp:{whatsapp_number}"
+            self.db = db
+        except Exception as e:
+            logger.error(f"Failed to initialize Twilio client: {e}")
+            raise
 
     def _truncate_string(self, text: str, max_length: int) -> str:
         """
@@ -50,12 +58,21 @@ class WhatsAppService:
         """
         Send a simple text message to a WhatsApp user using Twilio
         """
+        # Validate inputs
+        if not to or not message:
+            return {"error": "Missing required parameters: to and message", "success": False}
+            
         message = self._truncate_string(message, 1600)  # Twilio WhatsApp message limit
         
         try:
             # Ensure the 'to' number has the whatsapp: prefix
             if not to.startswith('whatsapp:'):
                 to = f"whatsapp:{to}"
+                
+            # Basic phone number validation
+            phone_part = to.replace('whatsapp:', '')
+            if not phone_part.startswith('+') or len(phone_part) < 8:
+                return {"error": f"Invalid phone number format: {phone_part}", "success": False}
                 
             twilio_message = self.client.messages.create(
                 from_=self.whatsapp_number,
