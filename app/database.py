@@ -17,7 +17,7 @@ SQLALCHEMY_DATABASE_URL = f"sqlite+libsql://{settings.turso_database_url}?secure
 # Create synchronous engine with auth token in connect_args and connection resilience
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
-    echo=True,
+    echo=False,  # Disable SQL query logging to reduce noise
     pool_pre_ping=True,  # Verify connections before using them
     pool_recycle=3600,   # Recycle connections every hour
     connect_args={

@@ -832,9 +832,15 @@ Customer message: {message}
             }
         
         try:
-            # Create initial state
+            # Load conversation history for context
+            conversation_history = self._load_conversation_history(customer_id, limit=10)
+            
+            # Add current message to history
+            conversation_history.append(HumanMessage(content=message))
+            
+            # Create initial state with conversation history
             initial_state = AgentState(
-                messages=[HumanMessage(content=message)],
+                messages=conversation_history,
                 customer_id=customer_id,
                 group_id=group_id,
                 current_intent=Intent.UNKNOWN,
@@ -867,6 +873,79 @@ Customer message: {message}
                 "action": "error",
                 "response": "I encountered an error processing your message. Please try again."
             }
+    
+    def _load_conversation_history(self, customer_id: int, limit: int = 10) -> List[Union[HumanMessage, AIMessage]]:
+        """Load recent conversation history from session context"""
+        try:
+            # Import here to avoid circular imports
+            from app.models import ConversationSession
+            
+            # Get current conversation session
+            session = ConversationSession.get_or_create_session(self.db, customer_id)
+            context = session.get_context() or {}
+            
+            # Get conversation history from context
+            conversation_messages = context.get('conversation_history', [])
+            
+            # Convert to LangChain messages (keep last N messages)
+            conversation_history = []
+            recent_messages = conversation_messages[-limit:] if len(conversation_messages) > limit else conversation_messages
+            
+            for msg in recent_messages:
+                if msg.get('role') == 'user':
+                    conversation_history.append(HumanMessage(content=msg.get('content', '')))
+                elif msg.get('role') == 'assistant':
+                    conversation_history.append(AIMessage(content=msg.get('content', '')))
+            
+            if self.settings.ai_debug_mode:
+                logger.info(f"Loaded {len(conversation_history)} messages from conversation history")
+                
+            return conversation_history
+            
+        except Exception as e:
+            logger.error(f"Error loading conversation history: {str(e)}")
+            return []
+    
+    def _save_conversation_turn(self, customer_id: int, user_message: str, assistant_response: str):
+        """Save a conversation turn (user message + assistant response) to session context"""
+        try:
+            from app.models import ConversationSession
+            
+            # Get current conversation session
+            session = ConversationSession.get_or_create_session(self.db, customer_id)
+            context = session.get_context() or {}
+            
+            # Get or initialize conversation history
+            conversation_history = context.get('conversation_history', [])
+            
+            # Add user message and assistant response
+            conversation_history.append({
+                'role': 'user',
+                'content': user_message,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+            
+            conversation_history.append({
+                'role': 'assistant', 
+                'content': assistant_response,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+            
+            # Keep only last 20 messages (10 turns) to prevent context bloat
+            if len(conversation_history) > 20:
+                conversation_history = conversation_history[-20:]
+            
+            # Update session context
+            context['conversation_history'] = conversation_history
+            session.update_state(session.current_state, context)
+            self.db.commit()
+            
+            if self.settings.ai_debug_mode:
+                logger.info(f"Saved conversation turn for customer {customer_id}")
+                
+        except Exception as e:
+            logger.error(f"Error saving conversation turn: {str(e)}")
+            self.db.rollback()
 
 def get_ai_agent(db: Session) -> OrderBotAgent:
     """Get initialized AI agent instance"""

@@ -208,6 +208,15 @@ async def handle_customer_message_with_ai_context(customer, event_data, db, curr
         # Handle AI agent response
         await handle_ai_agent_response(ai_result, customer, session, db, whatsapp_service, phone_number, group_id)
         
+        # Save conversation turn (user message + assistant response) for context
+        try:
+            # Get the assistant response that was sent
+            assistant_response = get_last_assistant_response(ai_result)
+            if assistant_response:
+                ai_agent._save_conversation_turn(customer.id, message, assistant_response)
+        except Exception as save_error:
+            logger.error(f"Error saving conversation turn: {str(save_error)}")
+        
     except Exception as e:
         logger.error(f"Error in AI processing: {str(e)}. Falling back to original logic.")
         # Fallback to original logic on AI failure
@@ -993,3 +1002,37 @@ async def handle_message_status_update(event_data: Dict[str, Any], db: Session) 
         logger.error(f"Error handling message status update: {str(e)}")
         db.rollback()
         return {"success": False, "error": str(e)}
+
+
+def get_last_assistant_response(ai_result: Dict[str, Any]) -> str:
+    """Extract the assistant response from AI result for conversation saving"""
+    action = ai_result.get("action", "")
+    order_data = ai_result.get("order_data", {})
+    
+    # Map different actions to their response messages
+    if action == "order_clarification_needed":
+        return "I'd like to help you with your order! Could you please provide more details about:\n\n• What items you'd like to order\n• Quantities needed\n• Any specific requirements (size, color, etc.)\n\nExample: '2 red t-shirts size L, 1 black hoodie size XL'"
+    
+    elif action == "order_extracted" and order_data:
+        items = order_data.get("items", [])
+        order_summary = "Great! I've got your order:\n\n"
+        for i, item in enumerate(items, 1):
+            order_summary += f"{i}. {item.get('name', 'Item')} x{item.get('quantity', 1)}\n"
+        order_summary += "\nHow would you like to pay?"
+        return order_summary
+    
+    elif action == "ai_response_generated" and order_data:
+        return order_data.get("ai_response", "How can I help you today?")
+    
+    elif action == "error" or action == "error_handled":
+        return order_data.get("error_message", "I'm sorry, I encountered an issue. Please try again or contact support.")
+    
+    elif action == "orders_retrieved":
+        return "Here's your order information..."  # Simplified for conversation history
+    
+    elif action == "payment_processed":
+        return "Thank you for your payment information!"
+    
+    else:
+        # Default response for unhandled actions
+        return "How can I help you today?"
