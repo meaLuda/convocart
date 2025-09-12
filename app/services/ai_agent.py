@@ -1006,8 +1006,8 @@ Customer message: {message}
                 continue
             
             # Create new message with cleaned content
-            if hasattr(msg, '_type'):
-                # Create new message of same type with cleaned content
+            # LangChain messages don't have _type attribute, they use class type directly
+            try:
                 msg_type = type(msg)
                 clean_msg = msg_type(content=content)
                 valid_messages.append(clean_msg)
@@ -1015,8 +1015,8 @@ Customer message: {message}
                 if self.settings.ai_debug_mode:
                     content_preview = content[:50] if isinstance(content, str) else f"[{len(content)} parts]"
                     logger.debug(f"Valid message {i}: {type(msg).__name__} - Content: {content_preview}")
-            else:
-                logger.warning(f"Message {i}: {type(msg).__name__} missing _type attribute")
+            except Exception as create_error:
+                logger.warning(f"Message {i}: Failed to create {type(msg).__name__} with cleaned content: {create_error}")
                 continue
         
         # Ensure we have at least one message for Gemini

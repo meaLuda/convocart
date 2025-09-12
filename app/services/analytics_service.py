@@ -788,6 +788,53 @@ class AnalyticsService:
         """Calculate preference score for a category"""
         # Weighted combination of quantity, spending, and frequency
         return (quantity * 0.3 + spent * 0.4 + frequency * 0.3)
+    
+    def _get_popular_products(self, group_id: Optional[int] = None, limit: int = 5) -> List[Dict[str, Any]]:
+        """Get popular products based on order frequency and quantity"""
+        try:
+            from app.models import Product, OrderItem, Order
+            from sqlalchemy import func, desc
+            
+            # Query to get products ordered most frequently
+            query = self.db.query(
+                Product.id,
+                Product.name,
+                Product.price,
+                func.count(OrderItem.id).label('order_count'),
+                func.sum(OrderItem.quantity).label('total_quantity')
+            ).join(
+                OrderItem, Product.id == OrderItem.product_id
+            ).join(
+                Order, OrderItem.order_id == Order.id
+            )
+            
+            # Filter by group if specified
+            if group_id:
+                query = query.filter(Product.group_id == group_id)
+            
+            # Get most popular products
+            popular_products = query.group_by(
+                Product.id, Product.name, Product.price
+            ).order_by(
+                desc('order_count'), desc('total_quantity')
+            ).limit(limit).all()
+            
+            # Convert to list of dicts
+            recommendations = []
+            for product in popular_products:
+                recommendations.append({
+                    'product_id': product.id,
+                    'product_name': product.name,
+                    'price': float(product.price),
+                    'popularity_score': float(product.order_count * product.total_quantity),
+                    'reason': f'Popular item (ordered {product.order_count} times)'
+                })
+            
+            return recommendations
+            
+        except Exception as e:
+            logger.error(f"Error getting popular products: {str(e)}")
+            return []
 
 
 def get_analytics_service(db: Session) -> AnalyticsService:
