@@ -447,13 +447,24 @@ Consider the conversation context and respond with just the intent name.
                 
         return Intent.UNKNOWN
     
-    def _get_business_specific_clarification(self, business_type: str, message_content: str) -> str:
+    def _get_business_type_str(self, business_type) -> str:
+        """Convert BusinessType enum or string to string safely"""
+        if hasattr(business_type, 'value'):
+            return business_type.value
+        elif isinstance(business_type, str):
+            return business_type
+        else:
+            return str(business_type)
+            
+    def _get_business_specific_clarification(self, business_type, message_content: str) -> str:
         """Get business-specific clarification prompts based on business type"""
-        if business_type and business_type.lower() in ['restaurant', 'food']:
+        business_type_str = self._get_business_type_str(business_type).lower()
+            
+        if business_type_str in ['restaurant', 'food']:
             return "menu_items"
-        elif business_type and business_type.lower() in ['fashion', 'clothing', 'apparel']:
+        elif business_type_str in ['fashion', 'clothing', 'apparel']:
             return "size_color_style"
-        elif business_type and business_type.lower() in ['electronics', 'gadgets']:
+        elif business_type_str in ['electronics', 'gadgets']:
             return "model_specifications" 
         else:
             return "general_details"
@@ -534,7 +545,7 @@ Customer context:
 - Preferred categories: {customer_profile.get('category_preferences', {}).get('dominant_category', 'none')}
 
 Business context:
-- Business type: {business_type.value}
+- Business type: {self._get_business_type_str(business_type)}
 - Business name: {group_name}
 
 If relevant, you can mention these personalized recommendations:
@@ -563,18 +574,18 @@ Response:"""
             business_config = self.business_config_service.get_business_template(business_type)
             typical_attributes = business_config.get("typical_product_attributes", [])
             
-            prompt = f"""Extract order details from this {business_type.value} customer message: "{message}"
+            prompt = f"""Extract order details from this {self._get_business_type_str(business_type)} customer message: "{message}"
 
-Business context: This is a {business_type.value} business.
+Business context: This is a {self._get_business_type_str(business_type)} business.
 Typical product attributes to look for: {', '.join(typical_attributes)}
 
 Return a JSON object with:
 - items: array of {{name: string, quantity: number, notes: string, attributes: object}}
 - special_instructions: string
 - estimated_total: number (if mentioned)
-- business_specific_notes: string (any {business_type.value}-specific requirements)
+- business_specific_notes: string (any {self._get_business_type_str(business_type)}-specific requirements)
 
-For {business_type.value} businesses, pay special attention to:
+For {self._get_business_type_str(business_type)} businesses, pay special attention to:
 {self._get_business_specific_extraction_notes(business_type)}
 
 If you cannot extract clear order details, return null.
@@ -738,6 +749,20 @@ Customer message: {message}
         }
         
         return notes.get(business_type, "brand, model, specifications, preferences")
+    
+    def _get_default_personality(self, business_type) -> str:
+        """Get default AI personality based on business type"""
+        business_type_str = self._get_business_type_str(business_type).lower()
+        
+        personalities = {
+            'restaurant': "You are a friendly restaurant assistant. Help customers with their food orders, suggest popular dishes, and provide information about ingredients and dietary options.",
+            'fashion': "You are a helpful fashion consultant. Assist customers with clothing choices, sizes, styles, and outfit recommendations.",
+            'electronics': "You are a knowledgeable electronics specialist. Help customers understand product specifications, compatibility, and make informed tech purchases.",
+            'pharmacy': "You are a professional pharmacy assistant. Help customers with their medication needs while being careful about medical advice.",
+            'grocery': "You are a friendly grocery store assistant. Help customers find products, understand nutrition information, and organize their shopping lists."
+        }
+        
+        return personalities.get(business_type_str, "You are a helpful customer service assistant. Provide friendly, professional support to help customers with their orders and questions.")
     
     def _match_products_to_catalog(self, items: List[Dict[str, Any]], group_id: int) -> List[Dict[str, Any]]:
         """Match extracted items to actual products in catalog"""
