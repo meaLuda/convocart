@@ -140,20 +140,22 @@ class OrderBotAgent:
             if not messages:
                 raise ValueError("No messages provided to LLM")
             
-            # Check if all messages have content
-            valid_messages = []
-            for msg in messages:
-                if hasattr(msg, 'content') and msg.content and msg.content.strip():
-                    valid_messages.append(msg)
-                else:
-                    logger.warning(f"Empty or invalid message: {type(msg)} - {getattr(msg, 'content', 'no content')}")
+            # Enhanced message validation based on Gemini API requirements
+            valid_messages = self._validate_and_clean_messages(messages)
             
             if not valid_messages:
+                logger.error(f"All {len(messages)} messages are empty or invalid after validation")
                 raise ValueError("All messages are empty or invalid")
                 
             # Use invoke for synchronous call wrapped in rate limiter
-            # Note: Twilio LLM integration is synchronous, so we wrap in try/catch
             response = self.llm.invoke(valid_messages)
+            
+            # Check for empty response due to safety filtering
+            if not response or not hasattr(response, 'content') or not response.content.strip():
+                logger.warning("Gemini returned empty response - likely due to safety filtering")
+                # Return a safe fallback response
+                from langchain_core.messages import AIMessage
+                response = AIMessage(content="I apologize, but I cannot process that request. Please try rephrasing or contact support for assistance.")
             
             # Estimate actual tokens used (rough approximation)
             prompt_text = " ".join([msg.content for msg in valid_messages])
@@ -409,10 +411,13 @@ class OrderBotAgent:
         group_name = group.name if group else "Our Business"
         customer_name = customer.name if customer else "Customer"
         
-        prompt = f"""You are an AI assistant for {group_name}, helping customers via WhatsApp.
+        # Ensure we have valid data for prompt construction
+        conversation_state = state.get('conversation_state', 'initial') if state else 'initial'
         
+        prompt = f"""You are an AI assistant for {group_name}, helping customers via WhatsApp.
+
 Customer: {customer_name}
-Current conversation state: {state.get('conversation_state', 'unknown')}
+Current conversation state: {conversation_state}
 
 Your task is to detect the customer's intent from their message. Respond with ONLY one of these intents:
 - place_order: Customer wants to place a new order
@@ -424,9 +429,14 @@ Your task is to detect the customer's intent from their message. Respond with ON
 - general_inquiry: General questions about products/services
 - unknown: Intent unclear
 
-Consider the conversation context and respond with just the intent name.
-"""
-        return prompt
+Consider the conversation context and respond with just the intent name."""
+
+        # Validate prompt is not empty
+        if not prompt or len(prompt.strip()) < 10:
+            logger.error("Generated intent detection prompt is too short or empty")
+            prompt = """You are a helpful AI assistant. Analyze the customer's message and respond with one of these intents: place_order, track_order, cancel_order, mpesa_payment, cash_payment, contact_support, general_inquiry, or unknown."""
+        
+        return prompt.strip()
     
     def _parse_intent_from_response(self, response: str) -> str:
         """Parse intent from Gemini response"""
@@ -892,10 +902,11 @@ Customer message: {message}
             recent_messages = conversation_messages[-limit:] if len(conversation_messages) > limit else conversation_messages
             
             for msg in recent_messages:
-                if msg.get('role') == 'user':
-                    conversation_history.append(HumanMessage(content=msg.get('content', '')))
-                elif msg.get('role') == 'assistant':
-                    conversation_history.append(AIMessage(content=msg.get('content', '')))
+                content = msg.get('content', '').strip()
+                if msg.get('role') == 'user' and content:  # Only add non-empty user messages
+                    conversation_history.append(HumanMessage(content=content))
+                elif msg.get('role') == 'assistant' and content:  # Only add non-empty assistant messages
+                    conversation_history.append(AIMessage(content=content))
             
             if self.settings.ai_debug_mode:
                 logger.info(f"Loaded {len(conversation_history)} messages from conversation history")
@@ -946,6 +957,79 @@ Customer message: {message}
         except Exception as e:
             logger.error(f"Error saving conversation turn: {str(e)}")
             self.db.rollback()
+    
+    def _validate_and_clean_messages(self, messages: List) -> List:
+        """
+        Validate and clean messages according to Gemini API requirements
+        Based on official documentation to prevent 'contents.parts must not be empty' errors
+        """
+        valid_messages = []
+        
+        for i, msg in enumerate(messages):
+            # Get message content safely
+            content = getattr(msg, 'content', '')
+            
+            # Skip messages with no content attribute
+            if not hasattr(msg, 'content'):
+                logger.warning(f"Message {i}: {type(msg).__name__} has no content attribute")
+                continue
+            
+            # Clean and validate content
+            if isinstance(content, str):
+                content = content.strip()
+                if not content:
+                    logger.warning(f"Message {i}: {type(msg).__name__} has empty content")
+                    continue
+                    
+                # Ensure minimum content length for Gemini
+                if len(content) < 3:
+                    logger.warning(f"Message {i}: {type(msg).__name__} content too short: '{content}'")
+                    continue
+                    
+            elif isinstance(content, list):
+                # Handle multimodal content (list format)
+                valid_parts = []
+                for part in content:
+                    if isinstance(part, dict) and part.get('text', '').strip():
+                        valid_parts.append(part)
+                    elif isinstance(part, dict) and part.get('type') == 'image_url':
+                        valid_parts.append(part)
+                
+                if not valid_parts:
+                    logger.warning(f"Message {i}: {type(msg).__name__} has no valid content parts")
+                    continue
+                    
+                # Update content with valid parts only
+                content = valid_parts
+            else:
+                logger.warning(f"Message {i}: {type(msg).__name__} has invalid content type: {type(content)}")
+                continue
+            
+            # Create new message with cleaned content
+            if hasattr(msg, '_type'):
+                # Create new message of same type with cleaned content
+                msg_type = type(msg)
+                clean_msg = msg_type(content=content)
+                valid_messages.append(clean_msg)
+                
+                if self.settings.ai_debug_mode:
+                    content_preview = content[:50] if isinstance(content, str) else f"[{len(content)} parts]"
+                    logger.debug(f"Valid message {i}: {type(msg).__name__} - Content: {content_preview}")
+            else:
+                logger.warning(f"Message {i}: {type(msg).__name__} missing _type attribute")
+                continue
+        
+        # Ensure we have at least one message for Gemini
+        if not valid_messages:
+            logger.error("No valid messages after cleaning - creating fallback human message")
+            from langchain_core.messages import HumanMessage
+            valid_messages.append(HumanMessage(content="Hello"))
+        
+        # Log final message count
+        if self.settings.ai_debug_mode:
+            logger.debug(f"Message validation: {len(messages)} -> {len(valid_messages)} valid messages")
+            
+        return valid_messages
 
 def get_ai_agent(db: Session) -> OrderBotAgent:
     """Get initialized AI agent instance"""
