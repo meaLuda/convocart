@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 from pathlib import Path
 import uvicorn
 from app.database import SessionLocal, engine, Base, get_db
-# from app.routers import users, webhook
+# from app.routers import users, webhook, data_import
 from app.config import Settings, get_settings
 from app import models
 from app.config import get_settings
 from contextlib import asynccontextmanager
 
-from app.routers import users, webhook
+from app.routers import users, webhook, data_import
 
 settings = get_settings()
 # Configure logging
@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI):
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 app = FastAPI(
-    title="WhatsApp Order Bot",
+    title="ConvoCart",
     description="A simple ordering bot for WhatsApp Business API",
     version="1.0.0",
     lifespan=lifespan
@@ -100,6 +100,7 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 # # Include routers
 app.include_router(webhook.router, tags=["webhook"])
 app.include_router(users.router, tags=["admin"])
+app.include_router(data_import.router, tags=["data-import"])
 
 # Initialize templates
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
@@ -115,12 +116,21 @@ def get_password_hash(password):
 async def root(request: Request):
     return templates.TemplateResponse(
         "intro.html",
-       
- {
+        {
             "request": request,
-            "title": "WhatsApp Order Bot ConvoCart",
-            "message": "Welcome to the WhatsApp Order Bot"
+            "title": "ConvoCart ConvoCart",
+            "message": "Welcome to the ConvoCart"
         }
+    )
+
+@app.get("/admin/data-import-htmx")
+async def data_import_htmx_page(request: Request):
+    """
+    HTMX-enhanced data import page for testing
+    """
+    return templates.TemplateResponse(
+        "data_import_htmx.html",
+        {"request": request}
     )
 
 if __name__ == "__main__":

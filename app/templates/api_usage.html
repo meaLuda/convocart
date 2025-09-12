@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}API Usage Dashboard{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-6">
+    <!-- Header -->
+    <div class="bg-white shadow rounded-lg p-6">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">API Usage Dashboard</h1>
+                <p class="text-gray-600 mt-1">Monitor API usage, quotas, and performance</p>
+            </div>
+            <div class="flex space-x-3">
+                <button hx-get="/htmx/api-usage-stats?days=1"
+                        hx-target="#usage-stats"
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm">
+                    Refresh
+                </button>
+                <a href="/admin/dashboard" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm">
+                    Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Current Quota Usage -->
+    {% if quota_usage %}
+    <div class="bg-white shadow rounded-lg p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Today's Quota Usage</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Gemini API -->
+            <div class="space-y-4">
+                <h3 class="font-medium text-gray-900">Gemini API</h3>
+                
+                <!-- Requests -->
+                <div>
+                    <div class="flex justify-between text-sm mb-1">
+                        <span>Requests</span>
+                        <span>{{ quota_usage.gemini.requests }}/{{ quota_usage.gemini.requests_limit }}</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        {% set requests_pct = quota_usage.gemini.requests_percentage %}
+                        <div class="h-2 rounded-full {% if requests_pct > 90 %}bg-red-600{% elif requests_pct > 75 %}bg-yellow-500{% else %}bg-green-600{% endif %}" 
+                             style="width: {{ requests_pct }}%"></div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">{{ "%.1f"|format(requests_pct) }}% used</p>
+                </div>
+                
+                <!-- Tokens -->
+                <div>
+                    <div class="flex justify-between text-sm mb-1">
+                        <span>Tokens</span>
+                        <span>{{ quota_usage.gemini.tokens }}/{{ quota_usage.gemini.tokens_limit }}</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        {% set tokens_pct = quota_usage.gemini.tokens_percentage %}
+                        <div class="h-2 rounded-full {% if tokens_pct > 90 %}bg-red-600{% elif tokens_pct > 75 %}bg-yellow-500{% else %}bg-green-600{% endif %}" 
+                             style="width: {{ tokens_pct }}%"></div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">{{ "%.1f"|format(tokens_pct) }}% used</p>
+                </div>
+            </div>
+            
+            <!-- WhatsApp API -->
+            <div class="space-y-4">
+                <h3 class="font-medium text-gray-900">WhatsApp API</h3>
+                
+                <div>
+                    <div class="flex justify-between text-sm mb-1">
+                        <span>Messages</span>
+                        <span>{{ quota_usage.whatsapp.requests }}/{{ quota_usage.whatsapp.requests_limit }}</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        {% set whatsapp_pct = quota_usage.whatsapp.requests_percentage %}
+                        <div class="h-2 rounded-full {% if whatsapp_pct > 90 %}bg-red-600{% elif whatsapp_pct > 75 %}bg-yellow-500{% else %}bg-green-600{% endif %}" 
+                             style="width: {{ whatsapp_pct }}%"></div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">{{ "%.1f"|format(whatsapp_pct) }}% used</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Usage Statistics -->
+    <div id="usage-stats" 
+         hx-get="/htmx/api-usage-stats?days=1"
+         hx-trigger="load, every 30s"
+         hx-target="this"
+         hx-swap="innerHTML">
+        Loading usage statistics...
+    </div>
+
+    <!-- Period Selector -->
+    <div class="bg-white shadow rounded-lg p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">View Different Periods</h2>
+        <div class="flex space-x-3">
+            <button hx-get="/htmx/api-usage-stats?days=1"
+                    hx-target="#usage-stats"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm">
+                Today
+            </button>
+            <button hx-get="/htmx/api-usage-stats?days=7"
+                    hx-target="#usage-stats"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm">
+                Last 7 Days
+            </button>
+            <button hx-get="/htmx/api-usage-stats?days=30"
+                    hx-target="#usage-stats"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm">
+                Last 30 Days
+            </button>
+        </div>
+    </div>
+
+    <!-- Error Analysis -->
+    {% if error_analysis and error_analysis.total_errors > 0 %}
+    <div class="bg-white shadow rounded-lg p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Error Analysis (Last 7 Days)</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <h3 class="font-medium text-gray-900 mb-3">Error Summary</h3>
+                <div class="space-y-2">
+                    <p class="text-sm">Total Errors: <span class="font-medium text-red-600">{{ error_analysis.total_errors }}</span></p>
+                    <p class="text-sm">Rate Limit Errors: <span class="font-medium">{{ error_analysis.rate_limit_errors }}</span></p>
+                </div>
+            </div>
+            
+            <div>
+                <h3 class="font-medium text-gray-900 mb-3">Error Types</h3>
+                <div class="space-y-1">
+                    {% for error_type, count in error_analysis.error_types.items() %}
+                    <div class="flex justify-between text-sm">
+                        <span>{{ error_type }}</span>
+                        <span class="font-medium">{{ count }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        {% if error_analysis.recommendations %}
+        <div class="mt-4 p-4 bg-yellow-50 rounded-lg">
+            <h4 class="font-medium text-yellow-800 mb-2">Recommendations</h4>
+            <ul class="space-y-1 text-sm text-yellow-700">
+                {% for recommendation in error_analysis.recommendations %}
+                <li>• {{ recommendation }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

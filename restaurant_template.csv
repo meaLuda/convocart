@@ -1,0 +1,4 @@
+name,category,price,description,ingredients,calories,spice_level,dietary_info,preparation_time
+Chicken Tikka Masala,food,1200,Tender chicken in creamy tomato sauce,"chicken, tomatoes, cream, spices",450,medium,gluten-free,15 mins
+Vegetable Biryani,food,900,Fragrant rice with mixed vegetables,"basmati rice, vegetables, spices",380,mild,vegan,20 mins
+Mango Lassi,beverages,250,Refreshing yogurt drink,"mango, yogurt, sugar",180,none,vegetarian,5 mins

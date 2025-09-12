@@ -1,0 +1,15 @@
+{% for bt in business_types %}
+<div class="p-4 border border-gray-200 rounded-lg hover:border-blue-300 transition-colors">
+    <div class="flex items-center justify-between mb-3">
+        <h3 class="font-medium text-gray-900">{{ bt.display_name }}</h3>
+        <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">{{ bt.sample_products }} samples</span>
+    </div>
+    <p class="text-sm text-gray-600 mb-3">
+        Features: {{ bt.features[:2]|join(', ') }}{% if bt.features|length > 2 %}...{% endif %}
+    </p>
+    <a href="/api/data/template/{{ bt.value }}?group_id=1&format=csv&sample_data=true"
+       class="block w-full bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded text-sm text-center">
+        Download Template
+    </a>
+</div>
+{% endfor %}

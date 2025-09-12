@@ -1,43 +1,40 @@
 import json
 import logging
-import requests
 from typing import Dict, Any, Optional, List
+from twilio.rest import Client
+from twilio.base import values
 from app.config import get_settings
 
 settings = get_settings()
-
-
 logger = logging.getLogger(__name__)
 
 class WhatsAppService:
     def __init__(self, db=None):
         """
-        Initialize the WhatsApp service with configuration from database or environment variables
+        Initialize the WhatsApp service with Twilio configuration
         """
         # Try to get configuration from database if provided
         if db:
             from app.models import Configuration
             # Get values from database with fallback to environment variables
-            api_url = Configuration.get_value(db, 'whatsapp_api_url', settings.whatsapp_api_url )
-            phone_id = Configuration.get_value(db, 'whatsapp_phone_id',settings.whatsapp_phone_id)
-            api_token = Configuration.get_value(db, 'whatsapp_api_token', settings.whatsapp_api_token)
+            account_sid = Configuration.get_value(db, 'twilio_account_sid', settings.twilio_account_sid)
+            auth_token = Configuration.get_value(db, 'twilio_auth_token', settings.twilio_auth_token)
+            whatsapp_number = Configuration.get_value(db, 'twilio_whatsapp_number', settings.twilio_whatsapp_number)
         else:
             # Use environment variables directly
-            api_url = settings.whatsapp_api_url
-            phone_id = settings.whatsapp_phone_id
-            api_token = settings.whatsapp_api_token
+            account_sid = settings.twilio_account_sid
+            auth_token = settings.twilio_auth_token
+            whatsapp_number = settings.twilio_whatsapp_number
             
         # Log configuration status (without sensitive values)
-        logger.info(f"WhatsApp service initialized with API URL: {api_url}")
-        logger.info(f"WhatsApp service initialized with Phone ID: {phone_id}")
-        logger.debug(f"WhatsApp service API token configured: {'Yes' if api_token else 'No'}")
+        logger.info(f"Twilio WhatsApp service initialized with Account SID: {account_sid[:8]}...")
+        logger.info(f"Twilio WhatsApp service initialized with Number: {whatsapp_number}")
+        logger.debug(f"Twilio Auth Token configured: {'Yes' if auth_token else 'No'}")
         
-        # Set up the API URL and headers as in original implementation
-        self.api_url = f"{api_url}/{phone_id}/messages"
-        self.headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_token}"
-        }
+        # Initialize Twilio client
+        self.client = Client(account_sid, auth_token)
+        self.whatsapp_number = f"whatsapp:{whatsapp_number}"
+        self.db = db
 
     def _truncate_string(self, text: str, max_length: int) -> str:
         """
@@ -51,94 +48,91 @@ class WhatsAppService:
 
     def send_text_message(self, to: str, message: str) -> Dict[str, Any]:
         """
-        Send a simple text message to a WhatsApp user
+        Send a simple text message to a WhatsApp user using Twilio
         """
-        message = self._truncate_string(message, 4096) # WhatsApp text message limit
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": to,
-            "type": "text",
-            "text": {
-                "preview_url": False,
-                "body": message
-            }
-        }
+        message = self._truncate_string(message, 1600)  # Twilio WhatsApp message limit
         
-        return self._make_request(payload)
+        try:
+            # Ensure the 'to' number has the whatsapp: prefix
+            if not to.startswith('whatsapp:'):
+                to = f"whatsapp:{to}"
+                
+            twilio_message = self.client.messages.create(
+                from_=self.whatsapp_number,
+                body=message,
+                to=to
+            )
+            
+            # Track message delivery if database is available
+            if self.db:
+                self._track_message_delivery({
+                    "to": to,
+                    "type": "text",
+                    "text": {"body": message}
+                }, {"messages": [{"id": twilio_message.sid}]})
+            
+            logger.info(f"Text message sent via Twilio: {twilio_message.sid}")
+            return {
+                "messages": [{"id": twilio_message.sid}],
+                "success": True
+            }
+            
+        except Exception as e:
+            logger.error(f"Error sending Twilio WhatsApp message: {str(e)}")
+            return {"error": str(e), "success": False}
     
     def send_quick_reply_buttons(self, to: str, message: str, buttons: list) -> Dict[str, Any]:
         """
-        Send interactive buttons message
-        buttons should be a list of dictionaries with 'id' and 'title' keys
+        Send interactive buttons message using Twilio content templates
+        Note: Twilio requires pre-approved templates for interactive messages
+        For now, we'll send text with numbered options
         """
         if len(buttons) > 3:
-            logger.warning("WhatsApp only supports up to 3 quick reply buttons, truncating list")
+            logger.warning("Limiting to 3 buttons for better user experience")
             buttons = buttons[:3]
-            
-        button_items = [
-            {
-                "type": "reply",
-                "reply": {
-                    "id": self._truncate_string(button["id"], 256), # Button ID limit
-                    "title": self._truncate_string(button["title"], 20) # Button title limit
-                }
-            } for button in buttons
-        ]
         
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": to,
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "body": {
-                    "text": self._truncate_string(message, 1024) # Interactive message body limit
-                },
-                "action": {
-                    "buttons": button_items
-                }
-            }
-        }
+        # Format message with button options
+        button_text = "\n\n"
+        for i, button in enumerate(buttons, 1):
+            title = self._truncate_string(button["title"], 50)
+            button_text += f"{i}. {title}\n"
         
-        return self._make_request(payload)
+        full_message = self._truncate_string(message, 1400) + button_text
+        full_message += "\nReply with the number of your choice."
+        
+        return self.send_text_message(to, full_message)
     
     def send_list_message(self, to: str, message: str, sections: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Send an interactive list message
-        sections: list of section dictionaries with 'title' and 'rows' keys
+        Converts to numbered text format since Twilio requires pre-approved templates
         """
         # Truncate message body
-        message = self._truncate_string(message, 1024) # Interactive message body limit
-
-        # Truncate section and row titles/descriptions
-        for section in sections:
-            section["title"] = self._truncate_string(section["title"], 24) # Section title limit
-            for row in section.get("rows", []):
-                row["id"] = self._truncate_string(row["id"], 256) # Row ID limit
-                row["title"] = self._truncate_string(row["title"], 24) # Row title limit
-                if "description" in row:
-                    row["description"] = self._truncate_string(row["description"], 72) # Row description limit
-
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": to,
-            "type": "interactive",
-            "interactive": {
-                "type": "list",
-                "body": {
-                    "text": message
-                },
-                "action": {
-                    "button": "View Options",
-                    "sections": sections
-                }
-            }
-        }
+        message = self._truncate_string(message, 1000)
         
-        return self._make_request(payload)
+        list_text = f"{message}\n\n"
+        option_num = 1
+        
+        for section in sections:
+            section_title = self._truncate_string(section["title"], 50)
+            list_text += f"*{section_title}*\n"
+            
+            for row in section.get("rows", []):
+                row_title = self._truncate_string(row["title"], 50)
+                list_text += f"{option_num}. {row_title}"
+                
+                if "description" in row:
+                    description = self._truncate_string(row["description"], 100)
+                    list_text += f" - {description}"
+                    
+                list_text += "\n"
+                option_num += 1
+            
+            list_text += "\n"
+        
+        list_text += "Reply with the number of your choice."
+        
+        return self.send_text_message(to, list_text)
     
     def send_order_confirmation(self, to: str, order_details: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -146,19 +140,19 @@ class WhatsAppService:
         """
         items_text = ""
         items = order_details.get('items', [])
-        order_number = self._truncate_string(order_details.get('order_number', 'N/A'), 20) # Order number limit
+        order_number = self._truncate_string(order_details.get('order_number', 'N/A'), 20)
         total_amount = order_details.get('total_amount', 0)
-        group_name = self._truncate_string(order_details.get('group_name', 'Our store'), 100) # Group name limit
+        group_name = self._truncate_string(order_details.get('group_name', 'Our store'), 100)
         
         if isinstance(items, list):
             for i, item in enumerate(items, 1):
-                name = self._truncate_string(item.get('name', 'Unknown item'), 50) # Item name limit
+                name = self._truncate_string(item.get('name', 'Unknown item'), 50)
                 quantity = item.get('quantity', 1)
                 price = item.get('price', 0)
                 items_text += f"{i}. {name} x{quantity} - KSH {price:.2f}\n"
         else:
             # Just use the raw text if not in expected format
-            items_text = self._truncate_string(str(items), 1000) # Items text limit
+            items_text = self._truncate_string(str(items), 1000)
         
         confirmation_text = f"📝 *ORDER SAVED*\n"
         confirmation_text += f"Order #: {order_number}\n"
@@ -170,24 +164,21 @@ class WhatsAppService:
         
         confirmation_text += "Thank you for your order! 🙏\n"
         confirmation_text += "Your group admin will confirm your order and update you shortly.\n\n"
-        confirmation_text += "For payment please confirm the following.\n\n"
+        confirmation_text += "For payment please confirm the following:\n\n"
+        confirmation_text += "1. Paid with M-Pesa\n"
+        confirmation_text += "2. Pay on Delivery\n"
+        confirmation_text += "3. Cancel Order\n\n"
+        confirmation_text += "Reply with the number of your choice."
         
-        # Add payment options buttons
-        buttons = [
-            {"id": "mpesa_message", "title": "Paid with M-Pesa"},
-            {"id": "pay_cash", "title": "Pay on Delivery"},
-            {"id": "cancel_order", "title": "Cancel Order"}
-        ]
-        
-        return self.send_quick_reply_buttons(to, confirmation_text, buttons)
+        return self.send_text_message(to, confirmation_text)
 
     def send_payment_confirmation(self, to: str, payment_details: Dict[str, Any]) -> Dict[str, Any]:
         """
         Send a payment confirmation message with enhanced details
         """
-        payment_method = self._truncate_string(payment_details.get('method', 'Unknown'), 50) # Payment method limit
-        order_number = self._truncate_string(payment_details.get('order_number', 'N/A'), 20) # Order number limit
-        payment_ref = self._truncate_string(payment_details.get('payment_ref', 'N/A'), 50) # Payment ref limit
+        payment_method = self._truncate_string(payment_details.get('method', 'Unknown'), 50)
+        order_number = self._truncate_string(payment_details.get('order_number', 'N/A'), 20)
+        payment_ref = self._truncate_string(payment_details.get('payment_ref', 'N/A'), 50)
         amount = payment_details.get('amount', 0)
         
         if payment_method == 'mpesa':
@@ -200,7 +191,6 @@ class WhatsAppService:
                 message += f"Amount: KSH {amount:.2f}\n"
                 
             message += "\n"
-            # payment pending confirmation
             message += "Your payment is pending confirmation. Please wait for your group admin to confirm.\n\n"
             message += "Your order has been received and is being processed. Thank you!"
         else:  # cash on delivery
@@ -220,14 +210,14 @@ class WhatsAppService:
         """
         Send a comprehensive order status update message
         """
-        order_number = self._truncate_string(order_data.get('order_number', 'N/A'), 20) # Order number limit
+        order_number = self._truncate_string(order_data.get('order_number', 'N/A'), 20)
         status = order_data.get('status', 'unknown')
-        group_name = self._truncate_string(order_data.get('group_name', 'Our store'), 100) # Group name limit
+        group_name = self._truncate_string(order_data.get('group_name', 'Our store'), 100)
         total_amount = order_data.get('total_amount', 0)
-        payment_method = self._truncate_string(order_data.get('payment_method', ''), 50) # Payment method limit
-        payment_status = self._truncate_string(order_data.get('payment_status', ''), 50) # Payment status limit
-        payment_ref = self._truncate_string(order_data.get('payment_ref', ''), 50) # Payment ref limit
-        order_details = self._truncate_string(order_data.get('order_details', ''), 1000) # Order details limit
+        payment_method = self._truncate_string(order_data.get('payment_method', ''), 50)
+        payment_status = self._truncate_string(order_data.get('payment_status', ''), 50)
+        payment_ref = self._truncate_string(order_data.get('payment_ref', ''), 50)
+        order_details = self._truncate_string(order_data.get('order_details', ''), 1000)
         created_at = order_data.get('created_at', '')
         
         # Status emoji mapping
@@ -290,10 +280,10 @@ class WhatsAppService:
         """
         Send a payment status update notification
         """
-        order_number = self._truncate_string(payment_data.get('order_number', 'N/A'), 20) # Order number limit
-        payment_status = self._truncate_string(payment_data.get('payment_status', 'unknown'), 50) # Payment status limit
-        payment_method = self._truncate_string(payment_data.get('payment_method', ''), 50) # Payment method limit
-        payment_ref = self._truncate_string(payment_data.get('payment_ref', ''), 50) # Payment ref limit
+        order_number = self._truncate_string(payment_data.get('order_number', 'N/A'), 20)
+        payment_status = self._truncate_string(payment_data.get('payment_status', 'unknown'), 50)
+        payment_method = self._truncate_string(payment_data.get('payment_method', ''), 50)
+        payment_ref = self._truncate_string(payment_data.get('payment_ref', ''), 50)
         amount = payment_data.get('amount', 0)
         
         # Payment status emoji mapping
@@ -337,108 +327,136 @@ class WhatsAppService:
         # Send the message
         return self.send_text_message(to, message)
 
-    def _make_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _track_message_delivery(self, payload: Dict[str, Any], response: Dict[str, Any]):
         """
-        Make a request to the WhatsApp API
+        Track sent message for delivery status monitoring
         """
         try:
-            response = requests.post(
-                self.api_url,
-                headers=self.headers,
-                data=json.dumps(payload)
+            from app.models import MessageDeliveryStatus, Customer
+            
+            # Extract message details
+            recipient_phone = payload.get("to")
+            message_type = payload.get("type", "text")
+            
+            # Get message content based on type
+            message_content = ""
+            if message_type == "text":
+                message_content = payload.get("text", {}).get("body", "")
+            
+            # Get Twilio message ID from response
+            messages = response.get("messages", [])
+            if not messages:
+                return
+            
+            twilio_message_id = messages[0].get("id")
+            if not twilio_message_id:
+                return
+            
+            # Find customer by phone number
+            customer = self.db.query(Customer).filter(
+                Customer.phone_number == recipient_phone.replace('whatsapp:', '')
+            ).first()
+            
+            # Create delivery tracking record
+            delivery_status = MessageDeliveryStatus(
+                message_id=twilio_message_id,
+                recipient_phone=recipient_phone,
+                customer_id=customer.id if customer else None,
+                message_type=message_type,
+                message_content=message_content,
+                current_status="sent"
             )
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            logger.error(f"Error sending WhatsApp message: {str(e)}")
-            return {"error": str(e)}
+            
+            self.db.add(delivery_status)
+            self.db.commit()
+            
+            logger.debug(f"Tracking delivery for Twilio message {twilio_message_id} to {recipient_phone}")
+            
+        except Exception as e:
+            logger.error(f"Error in message delivery tracking: {str(e)}")
+            if self.db:
+                self.db.rollback()
 
     def process_webhook_event(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Process an incoming webhook event
+        Process an incoming Twilio webhook event
         Returns customer phone number and message if a text message was received
         """
         try:
-            # Check if this is a valid webhook event with message data
-            if not data or "object" not in data or data["object"] != "whatsapp_business_account":
-                return None
-                
-            # Extract entry data
-            entries = data.get("entry", [])
-            if not entries:
-                return None
-                
-            # Process each entry (usually there's just one)
-            for entry in entries:
-                changes = entry.get("changes", [])
-                for change in changes:
-                    if change.get("field") != "messages":
-                        continue
-                        
-                    value = change.get("value", {})
-                    if "messages" not in value:
-                        continue
-                        
-                    messages = value.get("messages", [])
-                    if not messages:
-                        continue
-                        
-                    # Process the first message
-                    message = messages[0]
-                    
-                    # Get sender info
-                    contacts = value.get("contacts", [])
-                    contact_name = contacts[0].get("profile", {}).get("name") if contacts else "Unknown"
-                    
-                    message_type = message.get("type")
-                    from_number = message.get("from")
-                    
-                    if message_type == "text":
-                        # It's a text message
-                        text_body = message.get("text", {}).get("body", "")
-                        return {
-                            "phone_number": from_number,
-                            "name": contact_name,
-                            "message": text_body,
-                            "type": "text"
-                        }
-                    elif message_type == "interactive":
-                        # It's an interactive message (button click, etc.)
-                        interactive = message.get("interactive", {})
-                        
-                        if interactive.get("type") == "button_reply":
-                            button_reply = interactive.get("button_reply", {})
-                            button_id = button_reply.get("id", "")
-                            button_title = button_reply.get("title", "")
-                            
-                            return {
-                                "phone_number": from_number,
-                                "name": contact_name,
-                                "message": button_title,
-                                "button_id": button_id,
-                                "type": "button"
-                            }
-                        elif interactive.get("type") == "list_reply":
-                            list_reply = interactive.get("list_reply", {})
-                            list_id = list_reply.get("id", "")
-                            list_title = list_reply.get("title", "")
-                            
-                            return {
-                                "phone_number": from_number,
-                                "name": contact_name,
-                                "message": list_title,
-                                "list_id": list_id,
-                                "type": "list"
-                            }
+            # Twilio webhook format is different from Meta's format
+            # Extract basic message information
+            message_sid = data.get("MessageSid")
+            from_number = data.get("From", "").replace("whatsapp:", "")  # Remove whatsapp: prefix
+            body = data.get("Body", "")
             
-            return None
+            if not from_number or not body:
+                logger.warning("Incomplete webhook data received from Twilio")
+                return None
+            
+            # For Twilio, we don't get contact names in webhooks
+            # You might want to store names when customers first interact
+            contact_name = "Unknown"
+            
+            # Check if this is a status update (delivery receipt)
+            message_status = data.get("MessageStatus")
+            if message_status:
+                return self._process_twilio_status_update(data)
+            
+            # Process as regular text message
+            logger.info(f"Received Twilio WhatsApp message from {from_number}: {body[:50]}...")
+            
+            return {
+                "phone_number": from_number,
+                "name": contact_name,
+                "message": body,
+                "type": "text",
+                "message_id": message_sid
+            }
+            
         except Exception as e:
-            logger.error(f"Error processing webhook event: {str(e)}")
+            logger.error(f"Error processing Twilio webhook event: {str(e)}")
             return None
+    
+    def _process_twilio_status_update(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process Twilio WhatsApp message status updates
+        """
+        try:
+            message_sid = data.get("MessageSid")
+            recipient_id = data.get("To", "").replace("whatsapp:", "")
+            status = data.get("MessageStatus", "").lower()
+            
+            logger.info(f"Twilio message status update: {message_sid} -> {status} for {recipient_id}")
+            
+            # Map Twilio status to our internal status
+            status_mapping = {
+                "queued": "sent",
+                "sending": "sent", 
+                "sent": "sent",
+                "delivered": "delivered",
+                "read": "read",
+                "failed": "failed",
+                "undelivered": "failed"
+            }
+            
+            internal_status = status_mapping.get(status, status)
+            
+            return {
+                "type": "status_update",
+                "message_id": message_sid,
+                "recipient_id": recipient_id,
+                "status": internal_status,
+                "phone_number": recipient_id  # For compatibility
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing Twilio status update: {str(e)}")
+            return None
+
 
 # Helper function to get an initialized WhatsApp service
 def get_whatsapp_service(db=None):
     """
-    Get a WhatsApp service instance with current configuration
+    Get a WhatsApp service instance with current Twilio configuration
     """
     return WhatsAppService(db)

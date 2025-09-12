@@ -1,18 +1,21 @@
 # Variables
-PYTHON = uv 
-CONTAINER_NAME = orderbot
-IMAGE_NAME = orderbot-image
+PYTHON = uv
+CONTAINER_NAME = ConvoCart
+IMAGE_NAME = ConvoCart-image
 PORT = 2056
 
 # Tailwind CSS
 tw_watch:
-	@npx tailwindcss -i ./app/static/css/input.css -o ./app/static/css/output.css --watch
+	@npm run watch
+tw_minify:
+	@npm run build
 
 run_app:
 	uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 	@echo "Starting application..."
 	@echo "Visit http://localhost:8080 to access the application"
 	@echo "Application running at http://localhost:$(PORT)"
+
 # Docker Commands
 build:
 	docker build -t $(IMAGE_NAME) .
@@ -34,7 +37,7 @@ restart: stop start
 shell:
 	$(CONTAINER_NAME) /bin/bash
 
-fresh: 
+fresh:
 	-docker stop $(CONTAINER_NAME)
 	-docker rm $(CONTAINER_NAME)
 	-docker rmi $(IMAGE_NAME)

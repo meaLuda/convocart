@@ -3,17 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}WhatsApp Order Bot Admin{% endblock %}</title>
+    <title>{% block title %}ConvoCart Admin{% endblock %}</title>
     <!-- Tailwind CSS -->
     <link href="/static/css/output.css" rel="stylesheet">
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- jQuery -->
+    <!-- HTMX for progressive enhancement -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- HTMX Extensions -->
+    <script src="https://unpkg.com/htmx.org/dist/ext/loading-states.js"></script>
+    <!-- jQuery (legacy) -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+    <link rel="icon" type="image/svg+xml" href="/static/img/favicon.ico">
     <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litepicker/dist/css/litepicker.css"/>
+    
+    <!-- HTMX Loading States -->
+    <style>
+        .htmx-loading { opacity: 0.6; }
+        .htmx-request { cursor: wait; }
+        .htmx-indicator {
+            display: none;
+        }
+        .htmx-request .htmx-indicator {
+            display: inline;
+        }
+        .htmx-request.htmx-indicator {
+            display: inline;
+        }
+    </style>
     {% block head %}{% endblock %}
 </head>
 <body class="flex flex-col min-h-screen bg-gray-50">
@@ -21,8 +40,8 @@
         <div class="container mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center py-4">
                 <a href="/admin/dashboard" class="flex items-center space-x-2">
-                    <i class="fab fa-whatsapp text-2xl"></i>
-                    <span class="font-heading font-bold text-xl">WA Order Bot</span>
+                    <img src="/static/img/trolley.png" alt="ConvoCart Icon" class="h-8 w-auto">
+                    <span class="font-heading font-bold text-xl">ConvoCart</span>
                 </a>
                 {% if not admin %}
                 <a href="/admin/login" class="flex justify-end items-center space-x-2">
@@ -44,10 +63,14 @@
                         <i class="fas fa-users"></i>
                         <span>Groups</span>
                     </a>
-                    {% if admin.role == 'super_admin' %}
+                    {% if admin.role.value == 'super_admin' %}
                     <a href="/admin/users" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path.startswith('/admin/users') else '' }}">
                         <i class="fas fa-user-cog"></i>
                         <span>Users</span>
+                    </a>
+                    <a href="/admin/api-usage" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path == '/admin/api-usage' else '' }}">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>API Usage</span>
                     </a>
                     {% endif %}
                     <a href="/admin/settings" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path == '/admin/settings' else '' }}">
@@ -83,7 +106,7 @@
                         <i class="fas fa-users w-5"></i>
                         <span>Groups</span>
                     </a>
-                    {% if admin.role == 'super_admin' %}
+                    {% if admin.role.value == 'super_admin' %}
                     <a href="/admin/users" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path.startswith('/admin/users') else '' }}">
                         <i class="fas fa-user-cog w-5"></i>
                         <span>Users</span>
@@ -112,8 +135,8 @@
             <div class="flex flex-col md:flex-row md:justify-between items-center">
                 <div class="mb-4 md:mb-0">
                     <div class="flex items-center justify-center md:justify-start">
-                        <i class="fab fa-whatsapp text-whatsapp-default text-2xl mr-2"></i>
-                        <span class="font-semibold">WhatsApp Order Bot</span>
+                        <img src="/static/img/trolley.png" alt="ConvoCart Icon" class="h-8 w-auto">
+                        <span class="font-semibold">ConvoCart</span>
                     </div>
                     <p class="text-sm mt-1 text-center md:text-left">&copy; 2025 All rights reserved.</p>
                 </div>

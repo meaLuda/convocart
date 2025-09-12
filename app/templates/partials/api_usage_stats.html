@@ -1,0 +1,104 @@
+<div class="bg-white shadow rounded-lg p-6">
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-lg font-semibold text-gray-900">Usage Statistics</h2>
+        <span class="text-sm text-gray-500">{{ stats.period if stats.period else 'No data' }}</span>
+    </div>
+    
+    {% if stats.summary %}
+    <!-- Summary Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="text-center">
+            <p class="text-2xl font-bold text-gray-900">{{ stats.summary.total_calls }}</p>
+            <p class="text-sm text-gray-500">Total Calls</p>
+        </div>
+        <div class="text-center">
+            <p class="text-2xl font-bold text-green-600">{{ "%.1f"|format(stats.summary.success_rate) }}%</p>
+            <p class="text-sm text-gray-500">Success Rate</p>
+        </div>
+        <div class="text-center">
+            <p class="text-2xl font-bold text-blue-600">{{ stats.summary.total_tokens }}</p>
+            <p class="text-sm text-gray-500">Total Tokens</p>
+        </div>
+        <div class="text-center">
+            <p class="text-2xl font-bold text-purple-600">${{ "%.4f"|format(stats.summary.total_cost) }}</p>
+            <p class="text-sm text-gray-500">Estimated Cost</p>
+        </div>
+    </div>
+    
+    <!-- By Provider -->
+    {% if stats.by_provider %}
+    <div class="mb-6">
+        <h3 class="font-medium text-gray-900 mb-3">Usage by Provider</h3>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Provider</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Calls</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tokens</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Errors</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for provider, data in stats.by_provider.items() %}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ provider.title() }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ data.calls }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ data.tokens }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm {% if data.errors > 0 %}text-red-600{% else %}text-gray-500{% endif %}">{{ data.errors }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${{ "%.4f"|format(data.cost) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Performance Metrics -->
+    {% if stats.summary.average_response_time_ms %}
+    <div class="mb-6">
+        <h3 class="font-medium text-gray-900 mb-3">Performance</h3>
+        <div class="bg-gray-50 rounded-lg p-4">
+            <div class="flex justify-between">
+                <span class="text-sm text-gray-600">Average Response Time</span>
+                <span class="text-sm font-medium">{{ "%.0f"|format(stats.summary.average_response_time_ms) }}ms</span>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    {% else %}
+    <div class="text-center py-8">
+        <p class="text-gray-500">No usage data available for this period</p>
+    </div>
+    {% endif %}
+    
+    <!-- Current Quota Warning -->
+    {% if quota_usage %}
+    {% set gemini_requests_pct = quota_usage.gemini.requests_percentage %}
+    {% set gemini_tokens_pct = quota_usage.gemini.tokens_percentage %}
+    
+    {% if gemini_requests_pct > 80 or gemini_tokens_pct > 80 %}
+    <div class="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+            </div>
+            <div class="ml-3">
+                <h3 class="text-sm font-medium text-yellow-800">High Usage Alert</h3>
+                <div class="mt-2 text-sm text-yellow-700">
+                    <p>Your API usage is approaching daily limits. Consider:</p>
+                    <ul class="list-disc list-inside mt-1">
+                        {% if gemini_requests_pct > 80 %}<li>Reducing API request frequency</li>{% endif %}
+                        {% if gemini_tokens_pct > 80 %}<li>Optimizing prompt lengths</li>{% endif %}
+                        <li>Implementing more aggressive caching</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% endif %}
+</div>

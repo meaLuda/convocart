@@ -1,7 +1,7 @@
 {
   "name": "whatsapp-order-bot",
   "version": "1.0.0",
-  "description": "WhatsApp Order Bot with FastAPI and Tailwind CSS",
+  "description": "ConvoCart with FastAPI and Tailwind CSS",
   "scripts": {
     "build": "tailwindcss -i ./app/static/css/input.css -o ./app/static/css/output.css --minify",
     "watch": "tailwindcss -i ./app/static/css/input.css -o ./app/static/css/output.css --watch"

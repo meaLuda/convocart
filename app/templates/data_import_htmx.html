@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Data Import{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <!-- Header -->
+    <div class="bg-white shadow rounded-lg p-6">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">Data Import & Management</h1>
+                <p class="text-gray-600 mt-1">Import products and manage inventory across all your businesses</p>
+            </div>
+            <div class="flex space-x-3">
+                <a href="/admin/groups" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">
+                    Back to Businesses
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Business Selection -->
+        <div class="lg:col-span-1">
+            <div class="bg-white shadow rounded-lg p-6 sticky top-4">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Select Business</h2>
+                <div hx-get="/api/data/htmx/business-list"
+                     hx-trigger="load"
+                     hx-target="this"
+                     hx-swap="innerHTML">
+                    Loading businesses...
+                </div>
+                
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <h3 class="text-md font-semibold text-gray-900 mb-3">Quick Actions</h3>
+                    <div class="space-y-2">
+                        <button id="download-template" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm disabled:bg-gray-300" disabled>
+                            Download Template
+                        </button>
+                        <button id="export-products" class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm disabled:bg-gray-300" disabled>
+                            Export Products
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Upload Section -->
+            <div class="bg-white shadow rounded-lg p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Upload Products</h2>
+                
+                {% include 'partials/upload_section_empty.html' %}
+            </div>
+
+            <!-- Results Section -->
+            <div id="results-section" class="bg-white shadow rounded-lg p-6" style="display: none;">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Processing Results</h2>
+                <div id="results-content">
+                    <!-- Results will be populated here by HTMX -->
+                </div>
+            </div>
+
+            <!-- Business Type Templates -->
+            <div class="bg-white shadow rounded-lg p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Business Type Templates</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="template-grid"
+                     hx-get="/api/data/htmx/template-grid"
+                     hx-trigger="load"
+                     hx-target="this"
+                     hx-swap="innerHTML">
+                    Loading templates...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Minimal JavaScript for showing/hiding results section
+document.addEventListener('htmx:afterRequest', function(event) {
+    if (event.detail.target.id === 'results-content') {
+        document.getElementById('results-section').style.display = 'block';
+    }
+    
+    // Handle business selection highlighting
+    if (event.detail.target.classList.contains('business-item')) {
+        document.querySelectorAll('.business-item').forEach(item => {
+            item.classList.remove('border-blue-500', 'bg-blue-50');
+            item.classList.add('border-gray-200');
+        });
+        event.detail.target.classList.add('border-blue-500', 'bg-blue-50');
+        event.detail.target.classList.remove('border-gray-200');
+    }
+});
+</script>
+{% endblock %}

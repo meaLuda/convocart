@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}Data Import{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <!-- Header -->
+    <div class="bg-white shadow rounded-lg p-6">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">Data Import & Management</h1>
+                <p class="text-gray-600 mt-1">Import products and manage inventory across all your businesses</p>
+            </div>
+            <div class="flex space-x-3">
+                <a href="/admin/groups" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">
+                    Back to Businesses
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Business Selection -->
+        <div class="lg:col-span-1">
+            <div class="bg-white shadow rounded-lg p-6 sticky top-4">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Select Business</h2>
+                <div hx-get="/api/data/htmx/business-list"
+                     hx-trigger="load"
+                     hx-target="this"
+                     hx-swap="innerHTML">
+                    Loading businesses...
+                </div>
+                
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <h3 class="text-md font-semibold text-gray-900 mb-3">Quick Actions</h3>
+                    <div class="space-y-2">
+                        <button id="download-template" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm disabled:bg-gray-300" disabled>
+                            Download Template
+                        </button>
+                        <button id="export-products" class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm disabled:bg-gray-300" disabled>
+                            Export Products
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Upload Section -->
+            <div class="bg-white shadow rounded-lg p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Upload Products</h2>
+                
+                <div id="upload-section" class="text-center py-12">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">Select a business first</h3>
+                    <p class="mt-1 text-sm text-gray-500">Choose a business from the left to upload products</p>
+                </div>
+
+                <!-- File Upload Form (hidden initially) -->
+                <div id="upload-form" class="hidden">
+                    <form id="product-upload-form" class="space-y-6">
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-6">
+                            <div class="text-center">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                <div class="mt-4">
+                                    <label for="file-upload" class="cursor-pointer">
+                                        <span class="mt-2 block text-sm font-medium text-gray-900">
+                                            Upload CSV or Excel file
+                                        </span>
+                                        <input id="file-upload" name="file-upload" type="file" accept=".csv,.xlsx,.xls" class="sr-only">
+                                    </label>
+                                    <p class="mt-1 text-xs text-gray-500">CSV, XLSX, or XLS up to 10MB</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="flex items-center">
+                                    <input type="checkbox" id="update-existing" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked>
+                                    <span class="ml-2 text-sm text-gray-700">Update existing products</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="flex items-center">
+                                    <input type="checkbox" id="validate-only" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                    <span class="ml-2 text-sm text-gray-700">Validate only (don't import)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="flex space-x-3">
+                            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md">
+                                Upload & Process
+                            </button>
+                            <button type="button" id="clear-upload" class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-6 py-2 rounded-md">
+                                Clear
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results-section" class="hidden bg-white shadow rounded-lg p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Processing Results</h2>
+                <div id="results-content">
+                    <!-- Results will be populated here -->
+                </div>
+            </div>
+
+            <!-- Business Type Templates -->
+            <div class="bg-white shadow rounded-lg p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Business Type Templates</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="template-grid">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let selectedBusiness = null;
+let businessTypes = {};
+
+// Load business types and businesses
+async function loadData() {
+    try {
+        // Load business types
+        const btResponse = await fetch('/api/data/business-types');
+        const btData = await btResponse.json();
+        businessTypes = {};
+        btData.business_types.forEach(bt => {
+            businessTypes[bt.value] = bt;
+        });
+
+        // Load businesses
+        const businessResponse = await fetch('/admin/api/groups');
+        const businesses = await businessResponse.json();
+        
+        renderBusinessList(businesses);
+        renderTemplateGrid(btData.business_types);
+    } catch (error) {
+        console.error('Error loading data:', error);
+    }
+}
+
+function renderBusinessList(businesses) {
+    const container = document.getElementById('business-list');
+    container.innerHTML = '';
+    
+    if (businesses.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-sm">No businesses found. <a href="/admin/groups/create" class="text-blue-600">Create one</a>.</p>';
+        return;
+    }
+    
+    businesses.forEach(business => {
+        const div = document.createElement('div');
+        div.className = 'p-3 border border-gray-200 rounded-lg cursor-pointer hover:border-blue-300 transition-colors';
+        div.dataset.businessId = business.id;
+        div.dataset.businessType = business.business_type;
+        
+        div.innerHTML = `
+            <div class="flex items-center space-x-3">
+                <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <span class="text-blue-600 font-semibold text-xs">
+                        ${business.business_type.substr(0, 2).toUpperCase()}
+                    </span>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-900 truncate">${business.name}</p>
+                    <p class="text-xs text-gray-500">${business.business_type.replace('_', ' ')}</p>
+                </div>
+            </div>
+        `;
+        
+        div.addEventListener('click', () => selectBusiness(business));
+        container.appendChild(div);
+    });
+}
+
+function renderTemplateGrid(businessTypes) {
+    const container = document.getElementById('template-grid');
+    container.innerHTML = '';
+    
+    businessTypes.forEach(bt => {
+        const div = document.createElement('div');
+        div.className = 'p-4 border border-gray-200 rounded-lg hover:border-blue-300 transition-colors';
+        
+        div.innerHTML = `
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-medium text-gray-900">${bt.display_name}</h3>
+                <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">${bt.sample_products} samples</span>
+            </div>
+            <p class="text-sm text-gray-600 mb-3">Features: ${bt.features.slice(0, 2).join(', ')}${bt.features.length > 2 ? '...' : ''}</p>
+            <button onclick="downloadBusinessTypeTemplate('${bt.value}')" 
+                    class="w-full bg-gray-600 hover:bg-gray-700 text-white px-3 py-2 rounded text-sm">
+                Download Template
+            </button>
+        `;
+        
+        container.appendChild(div);
+    });
+}
+
+function selectBusiness(business) {
+    selectedBusiness = business;
+    
+    // Update UI
+    document.querySelectorAll('[data-business-id]').forEach(el => {
+        el.classList.remove('border-blue-500', 'bg-blue-50');
+        el.classList.add('border-gray-200');
+    });
+    
+    const selectedEl = document.querySelector(`[data-business-id="${business.id}"]`);
+    selectedEl.classList.add('border-blue-500', 'bg-blue-50');
+    selectedEl.classList.remove('border-gray-200');
+    
+    // Enable buttons
+    document.getElementById('download-template').disabled = false;
+    document.getElementById('export-products').disabled = false;
+    
+    // Show upload form
+    document.getElementById('upload-section').classList.add('hidden');
+    document.getElementById('upload-form').classList.remove('hidden');
+}
+
+// Template download functions
+function downloadBusinessTypeTemplate(businessType) {
+    const url = `/api/data/template/${businessType}?group_id=1&format=csv&sample_data=true`;
+    window.open(url, '_blank');
+}
+
+document.getElementById('download-template').addEventListener('click', () => {
+    if (selectedBusiness) {
+        const url = `/api/data/template/${selectedBusiness.business_type}?group_id=${selectedBusiness.id}&format=csv&sample_data=true`;
+        window.open(url, '_blank');
+    }
+});
+
+document.getElementById('export-products').addEventListener('click', () => {
+    if (selectedBusiness) {
+        const url = `/api/data/export-inventory/${selectedBusiness.id}?format=csv`;
+        window.open(url, '_blank');
+    }
+});
+
+// File upload handling
+document.getElementById('file-upload').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const fileName = document.querySelector('[for="file-upload"] span');
+        fileName.textContent = `Selected: ${file.name}`;
+        fileName.classList.add('text-blue-600');
+    }
+});
+
+document.getElementById('product-upload-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    if (!selectedBusiness) return;
+    
+    const fileInput = document.getElementById('file-upload');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('Please select a file first');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const validateOnly = document.getElementById('validate-only').checked;
+    const updateExisting = document.getElementById('update-existing').checked;
+    
+    try {
+        const endpoint = validateOnly ? '/api/data/validate' : '/api/data/import';
+        const url = `${endpoint}?group_id=${selectedBusiness.id}&business_type=${selectedBusiness.business_type}&update_existing=${updateExisting}`;
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        displayResults(result, validateOnly);
+    } catch (error) {
+        console.error('Upload error:', error);
+        displayResults({success: false, error: error.message}, validateOnly);
+    }
+});
+
+function displayResults(result, isValidation) {
+    const section = document.getElementById('results-section');
+    const content = document.getElementById('results-content');
+    
+    let html = '';
+    
+    if (result.success) {
+        html = `<div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <h3 class="text-green-800 font-semibold">${isValidation ? 'Validation' : 'Import'} Successful!</h3>`;
+        
+        if (isValidation && result.validation) {
+            html += `<div class="mt-3 text-sm text-green-700">
+                        <p>File analyzed: ${result.rows_analyzed} rows</p>
+                        <p>Valid records: ${result.validation.valid_records || 0}</p>
+                        <p>Errors: ${result.validation.errors ? result.validation.errors.length : 0}</p>
+                     </div>`;
+        } else if (!isValidation && result.import_result) {
+            html += `<div class="mt-3 text-sm text-green-700">
+                        <p>Products imported: ${result.import_result.imported || 0}</p>
+                        <p>Products updated: ${result.import_result.updated || 0}</p>
+                        <p>Errors: ${result.import_result.errors || 0}</p>
+                     </div>`;
+        }
+        
+        html += '</div>';
+    } else {
+        html = `<div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <h3 class="text-red-800 font-semibold">Error</h3>
+                    <p class="mt-2 text-sm text-red-700">${result.error || 'An error occurred'}</p>
+                </div>`;
+    }
+    
+    content.innerHTML = html;
+    section.classList.remove('hidden');
+}
+
+document.getElementById('clear-upload').addEventListener('click', () => {
+    document.getElementById('product-upload-form').reset();
+    document.getElementById('results-section').classList.add('hidden');
+    const fileName = document.querySelector('[for="file-upload"] span');
+    fileName.textContent = 'Upload CSV or Excel file';
+    fileName.classList.remove('text-blue-600');
+});
+
+// Initialize
+loadData();
+</script>
+{% endblock %}

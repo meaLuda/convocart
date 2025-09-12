@@ -1,0 +1,70 @@
+<div id="upload-form">
+    <h3 class="text-lg font-semibold mb-4">Upload Products for {{ business.name }}</h3>
+    
+    <form hx-post="/api/data/htmx/upload-file?group_id={{ business.id }}&business_type={{ business.business_type.value }}"
+          hx-target="#results-section"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
+          class="space-y-6">
+          
+        <div class="border-2 border-dashed border-gray-300 rounded-lg p-6">
+            <div class="text-center">
+                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <div class="mt-4">
+                    <label for="file-upload" class="cursor-pointer">
+                        <span class="mt-2 block text-sm font-medium text-gray-900">
+                            Upload CSV or Excel file
+                        </span>
+                        <input id="file-upload" name="file" type="file" accept=".csv,.xlsx,.xls" class="sr-only" required>
+                    </label>
+                    <p class="mt-1 text-xs text-gray-500">CSV, XLSX, or XLS up to 10MB</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="flex items-center">
+                    <input type="checkbox" name="update_existing" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked>
+                    <span class="ml-2 text-sm text-gray-700">Update existing products</span>
+                </label>
+            </div>
+            <div>
+                <label class="flex items-center">
+                    <input type="checkbox" name="validate_only" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                    <span class="ml-2 text-sm text-gray-700">Validate only (don't import)</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="flex space-x-3">
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-md">
+                <span class="htmx-indicator">
+                    <i class="fas fa-spinner fa-spin mr-2"></i>
+                </span>
+                Upload & Process
+            </button>
+            <button type="button" 
+                    hx-get="/api/data/htmx/clear-upload"
+                    hx-target="#upload-section"
+                    hx-swap="outerHTML"
+                    class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-6 py-2 rounded-md">
+                Clear
+            </button>
+        </div>
+    </form>
+    
+    <!-- Quick action buttons -->
+    <div class="mt-4 flex space-x-2">
+        <a href="/api/data/template/{{ business.business_type.value }}?group_id={{ business.id }}&format=csv&sample_data=true"
+           class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm">
+            Download Template
+        </a>
+        <a href="/api/data/export-inventory/{{ business.id }}?format=csv"
+           class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm">
+            Export Products
+        </a>
+    </div>
+</div>

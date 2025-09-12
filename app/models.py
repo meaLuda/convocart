@@ -65,6 +65,50 @@ class PaymentMethod(enum.Enum):
     MPESA = "mpesa"
     CASH_ON_DELIVERY = "cash_on_delivery"
     CARD = "card"
+    BANK_TRANSFER = "bank_transfer"
+    MOBILE_MONEY = "mobile_money"
+    CRYPTOCURRENCY = "crypto"
+
+
+# Business type enum for multi-vertical support
+class BusinessType(enum.Enum):
+    RESTAURANT = "restaurant"
+    RETAIL = "retail"
+    GROCERY = "grocery"
+    PHARMACY = "pharmacy"
+    ELECTRONICS = "electronics"
+    FASHION = "fashion"
+    SERVICES = "services"
+    AUTOMOTIVE = "automotive"
+    BEAUTY = "beauty"
+    FITNESS = "fitness"
+    EDUCATION = "education"
+    REAL_ESTATE = "real_estate"
+    AGRICULTURE = "agriculture"
+    GENERAL = "general"
+
+
+# Product category for different business types
+class ProductCategory(enum.Enum):
+    # Restaurant
+    FOOD = "food"
+    BEVERAGES = "beverages"
+    # Retail
+    CLOTHING = "clothing"
+    ACCESSORIES = "accessories"
+    # Electronics
+    SMARTPHONES = "smartphones"
+    COMPUTERS = "computers"
+    # Pharmacy
+    MEDICINES = "medicines"
+    HEALTH_PRODUCTS = "health_products"
+    # Services
+    CONSULTATION = "consultation"
+    DELIVERY = "delivery"
+    # General
+    PHYSICAL_PRODUCT = "physical_product"
+    DIGITAL_PRODUCT = "digital_product"
+    SERVICE = "service"
 
 
 # Many-to-many relationship table for users and groups (for group memberships)
@@ -192,12 +236,27 @@ class Group(Base, TimestampMixin):
     name = Column(String(100), nullable=False)
     identifier = Column(String(50), unique=True, index=True, nullable=False)
     description = Column(Text, nullable=True)
-    category = Column(String(50), nullable=True)
+    category = Column(String(50), nullable=True)  # Deprecated: use business_type
+    business_type = Column(Enum(BusinessType), default=BusinessType.GENERAL, nullable=False)
     welcome_message = Column(Text, nullable=True)
     logo_url = Column(String(255), nullable=True)
     contact_email = Column(String(100), nullable=True)
     contact_phone = Column(String(20), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Business-specific settings
+    business_settings = Column(JsonGettable, nullable=True)  # Store business-specific configurations
+    operating_hours = Column(JsonGettable, nullable=True)  # Store operating hours
+    delivery_areas = Column(JsonGettable, nullable=True)  # Store delivery areas/zones
+    payment_methods = Column(JsonGettable, nullable=True)  # Store accepted payment methods
+    
+    # AI/ML settings
+    ai_personality = Column(Text, nullable=True)  # AI personality for this business
+    custom_prompts = Column(JsonGettable, nullable=True)  # Custom AI prompts for business
+    
+    # Analytics settings
+    analytics_enabled = Column(Boolean, default=True, nullable=False)
+    recommendation_engine = Column(Boolean, default=True, nullable=False)
 
     # Relationships - specify foreign_keys in the Customer relationship
     users = relationship("User", secondary=user_groups, back_populates="groups")
@@ -215,6 +274,37 @@ class Group(Base, TimestampMixin):
             )
         return identifier
 
+
+class MessageDeliveryStatus(Base):
+    """Track WhatsApp message delivery status"""
+    __tablename__ = "message_delivery_status"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    message_id = Column(String(255), unique=True, index=True, nullable=False)  # WhatsApp message ID
+    recipient_phone = Column(String(20), nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    
+    # Message details
+    message_type = Column(String(50), nullable=True)  # text, interactive, etc.
+    message_content = Column(Text, nullable=True)
+    
+    # Status tracking
+    sent_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    delivered_at = Column(DateTime, nullable=True)
+    read_at = Column(DateTime, nullable=True)
+    failed_at = Column(DateTime, nullable=True)
+    
+    # Current status
+    current_status = Column(String(20), default="sent", nullable=False)  # sent, delivered, read, failed
+    
+    # Error details if failed
+    error_code = Column(String(50), nullable=True)
+    error_message = Column(Text, nullable=True)
+    
+    # Relationships
+    customer = relationship("Customer", backref="message_statuses")
+    order = relationship("Order", backref="message_statuses")
 
 class Configuration(Base):
     """
@@ -285,6 +375,7 @@ class Order(Base, TimestampMixin):
     # Relationships
     customer = relationship("Customer", back_populates="orders")
     group = relationship("Group", back_populates="orders")
+    order_items = relationship("OrderItem", back_populates="order")
 
     def __init__(self, **kwargs):
         super(Order, self).__init__(**kwargs)
@@ -419,5 +510,235 @@ class ConversationSession(Base):
             db.refresh(session)
 
         return session
+
+
+class Product(Base, TimestampMixin):
+    """
+    Universal product model that adapts to any business type
+    """
+    __tablename__ = "products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    
+    # Basic product information
+    name = Column(String(200), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    sku = Column(String(100), nullable=True, index=True)  # Stock Keeping Unit
+    barcode = Column(String(100), nullable=True, index=True)
+    
+    # Categorization
+    category = Column(Enum(ProductCategory), nullable=True)
+    subcategory = Column(String(100), nullable=True)
+    tags = Column(JsonGettable, nullable=True)  # Flexible tagging system
+    
+    # Pricing
+    base_price = Column(Float, nullable=False, default=0.0)
+    sale_price = Column(Float, nullable=True)  # Optional discounted price
+    cost_price = Column(Float, nullable=True)  # For margin calculation
+    currency = Column(String(3), default="KSH", nullable=False)
+    
+    # Inventory
+    stock_quantity = Column(Integer, default=0, nullable=False)
+    low_stock_threshold = Column(Integer, default=5, nullable=False)
+    track_inventory = Column(Boolean, default=True, nullable=False)
+    
+    # Product variants (sizes, colors, etc.)
+    has_variants = Column(Boolean, default=False, nullable=False)
+    variant_options = Column(JsonGettable, nullable=True)  # e.g., {"sizes": ["S","M","L"], "colors": ["red","blue"]}
+    
+    # Media
+    images = Column(JsonGettable, nullable=True)  # Array of image URLs
+    video_url = Column(String(500), nullable=True)
+    
+    # Business-specific attributes
+    attributes = Column(JsonGettable, nullable=True)  # Flexible attributes for different business types
+    
+    # Availability
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_featured = Column(Boolean, default=False, nullable=False)
+    availability_status = Column(String(50), default="available", nullable=False)  # available, out_of_stock, discontinued
+    
+    # SEO and searchability
+    search_keywords = Column(Text, nullable=True)
+    
+    # Relationships
+    group = relationship("Group", backref="products")
+    inventory_logs = relationship("InventoryLog", back_populates="product")
+    order_items = relationship("OrderItem", back_populates="product")
+    reviews = relationship("ProductReview", back_populates="product")
+
+    def get_current_price(self):
+        """Get the current selling price (sale price if available, otherwise base price)"""
+        return self.sale_price if self.sale_price and self.sale_price > 0 else self.base_price
+    
+    def is_in_stock(self):
+        """Check if product is in stock"""
+        if not self.track_inventory:
+            return self.availability_status == "available"
+        return self.stock_quantity > 0 and self.availability_status == "available"
+    
+    def is_low_stock(self):
+        """Check if product is running low on stock"""
+        if not self.track_inventory:
+            return False
+        return self.stock_quantity <= self.low_stock_threshold
+
+
+class ProductVariant(Base, TimestampMixin):
+    """
+    Product variants for products with different options (size, color, etc.)
+    """
+    __tablename__ = "product_variants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    
+    # Variant identification
+    sku = Column(String(100), nullable=True, index=True)
+    variant_name = Column(String(200), nullable=False)  # e.g., "Large Red T-Shirt"
+    variant_options = Column(JsonGettable, nullable=False)  # e.g., {"size": "L", "color": "red"}
+    
+    # Pricing (can override product base price)
+    price_adjustment = Column(Float, default=0.0, nullable=False)  # +/- from base price
+    
+    # Inventory
+    stock_quantity = Column(Integer, default=0, nullable=False)
+    
+    # Availability
+    is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Relationships
+    product = relationship("Product", backref="variants")
+
+
+class InventoryLog(Base, TimestampMixin):
+    """
+    Track inventory changes for audit and analytics
+    """
+    __tablename__ = "inventory_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=True, index=True)
+    
+    # Change information
+    change_type = Column(String(50), nullable=False)  # stock_in, stock_out, adjustment, sale, return
+    quantity_before = Column(Integer, nullable=False)
+    quantity_change = Column(Integer, nullable=False)  # Can be negative
+    quantity_after = Column(Integer, nullable=False)
+    
+    # Context
+    reason = Column(String(200), nullable=True)  # Reason for change
+    reference_id = Column(String(100), nullable=True)  # Order ID, supplier invoice, etc.
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    # Cost tracking
+    unit_cost = Column(Float, nullable=True)
+    total_cost = Column(Float, nullable=True)
+    
+    # Relationships
+    product = relationship("Product", back_populates="inventory_logs")
+    variant = relationship("ProductVariant", backref="inventory_logs")
+    user = relationship("User", backref="inventory_logs")
+
+
+class OrderItem(Base, TimestampMixin):
+    """
+    Individual items within an order
+    """
+    __tablename__ = "order_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True, index=True)  # Can be null for custom items
+    variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=True, index=True)
+    
+    # Item details
+    product_name = Column(String(200), nullable=False)  # Snapshot at time of order
+    product_sku = Column(String(100), nullable=True)
+    variant_details = Column(JsonGettable, nullable=True)  # Variant options at time of order
+    
+    # Quantity and pricing
+    quantity = Column(Integer, nullable=False, default=1)
+    unit_price = Column(Float, nullable=False)  # Price at time of order
+    total_price = Column(Float, nullable=False)  # quantity * unit_price
+    
+    # Custom modifications
+    special_instructions = Column(Text, nullable=True)
+    customizations = Column(JsonGettable, nullable=True)  # Store any custom modifications
+    
+    # Relationships
+    order = relationship("Order", back_populates="order_items")
+    product = relationship("Product", back_populates="order_items")
+    variant = relationship("ProductVariant", backref="order_items")
+
+
+class ProductReview(Base, TimestampMixin):
+    """
+    Customer reviews and ratings for products
+    """
+    __tablename__ = "product_reviews"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True, index=True)  # Link to purchase
+    
+    # Review content
+    rating = Column(Integer, nullable=False)  # 1-5 stars
+    title = Column(String(200), nullable=True)
+    comment = Column(Text, nullable=True)
+    
+    # Moderation
+    is_verified_purchase = Column(Boolean, default=False, nullable=False)
+    is_approved = Column(Boolean, default=True, nullable=False)
+    
+    # Helpful votes
+    helpful_votes = Column(Integer, default=0, nullable=False)
+    
+    # Relationships
+    product = relationship("Product", back_populates="reviews")
+    customer = relationship("Customer", backref="reviews")
+    order = relationship("Order", backref="reviews")
+
+
+class CustomerAnalytics(Base, TimestampMixin):
+    """
+    Store customer behavior analytics for personalization
+    """
+    __tablename__ = "customer_analytics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    
+    # Purchase behavior
+    total_orders = Column(Integer, default=0, nullable=False)
+    total_spent = Column(Float, default=0.0, nullable=False)
+    average_order_value = Column(Float, default=0.0, nullable=False)
+    last_order_date = Column(DateTime, nullable=True)
+    
+    # Preferences (ML-derived)
+    preferred_categories = Column(JsonGettable, nullable=True)  # Top categories by purchase frequency
+    preferred_price_range = Column(JsonGettable, nullable=True)  # {"min": X, "max": Y}
+    purchase_frequency = Column(String(50), nullable=True)  # weekly, monthly, occasional
+    
+    # Interaction patterns
+    peak_interaction_times = Column(JsonGettable, nullable=True)  # When customer usually chats
+    preferred_communication_style = Column(String(50), nullable=True)  # formal, casual, etc.
+    
+    # AI-derived insights
+    customer_segment = Column(String(50), nullable=True)  # VIP, regular, new, at_risk
+    churn_risk_score = Column(Float, nullable=True)  # 0.0 to 1.0
+    lifetime_value_prediction = Column(Float, nullable=True)
+    
+    # Recommendations
+    next_purchase_prediction = Column(JsonGettable, nullable=True)
+    personalized_offers = Column(JsonGettable, nullable=True)
+    
+    # Relationships
+    customer = relationship("Customer", backref="analytics")
+    group = relationship("Group", backref="customer_analytics")
 
 

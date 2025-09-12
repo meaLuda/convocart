@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta
 import re
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, status, Form, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.templating import Jinja2Templates
@@ -15,6 +15,8 @@ from pathlib import Path
 from urllib.parse import quote
 from passlib.context import CryptContext  # Added for password hashing
 from app.config import get_settings
+from app.services.api_monitor import get_api_monitor
+from sqlalchemy import func, desc
 
 settings = get_settings()
 
@@ -979,7 +981,7 @@ async def test_whatsapp_connection(
         whatsapp_service = WhatsAppService(db)
         
         # Send a test message
-        test_message = "🧪 This is a test message from your WhatsApp Order Bot. If you received this, your API configuration is working correctly! Time: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        test_message = "🧪 This is a test message from your ConvoCart. If you received this, your API configuration is working correctly! Time: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         result = whatsapp_service.send_text_message(phone_number, test_message)
         
@@ -1486,3 +1488,121 @@ async def delete_user(
     db.commit()
 
     return RedirectResponse(url="/admin/users", status_code=303)
+
+
+# HTMX Dashboard Endpoints
+@router.get("/htmx/dashboard-stats", response_class=HTMLResponse)
+async def htmx_dashboard_stats(
+    request: Request,
+    current_admin: models.User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    HTMX endpoint for real-time dashboard stats
+    """
+    try:
+        # Determine which groups to show based on user role
+        if current_admin.role == models.UserRole.SUPER_ADMIN:
+            # Super admin sees all groups
+            order_query = db.query(models.Order)
+        else:
+            # Client admin sees only their groups
+            order_query = db.query(models.Order).join(models.Group).filter(
+                models.Group.client_admin_id == current_admin.id
+            )
+        
+        # Calculate stats
+        total_orders = order_query.count()
+        pending_orders = order_query.filter(models.Order.status == models.OrderStatus.PENDING).count()
+        completed_orders = order_query.filter(models.Order.status == models.OrderStatus.COMPLETED).count()
+        
+        stats = {
+            "total_orders": total_orders,
+            "pending_orders": pending_orders,
+            "completed_orders": completed_orders
+        }
+        
+        return templates.TemplateResponse(
+            "partials/dashboard_stats.html",
+            {"request": request, **stats}
+        )
+        
+    except Exception as e:
+        logger.error(f"Error loading dashboard stats: {str(e)}")
+        return '<div class="text-red-500">Error loading dashboard stats</div>'
+
+@router.get("/admin/api-usage", response_class=HTMLResponse)
+async def api_usage_page(
+    request: Request,
+    current_admin: models.User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    API Usage monitoring dashboard
+    """
+    try:
+        # Only super admins can view API usage
+        if current_admin.role != models.UserRole.SUPER_ADMIN:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        api_monitor = get_api_monitor(db)
+        
+        # Get usage stats for different periods
+        daily_stats = await api_monitor.get_usage_stats(days=1)
+        weekly_stats = await api_monitor.get_usage_stats(days=7)
+        monthly_stats = await api_monitor.get_usage_stats(days=30)
+        
+        # Get current quota usage
+        quota_usage = await api_monitor.get_current_quota_usage()
+        
+        # Get error analysis
+        error_analysis = await api_monitor.get_error_analysis(days=7)
+        
+        return templates.TemplateResponse(
+            "api_usage.html",
+            {
+                "request": request,
+                "admin": current_admin,
+                "daily_stats": daily_stats,
+                "weekly_stats": weekly_stats,
+                "monthly_stats": monthly_stats,
+                "quota_usage": quota_usage,
+                "error_analysis": error_analysis
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error loading API usage page: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/htmx/api-usage-stats", response_class=HTMLResponse)
+async def htmx_api_usage_stats(
+    request: Request,
+    days: int = Query(1, description="Number of days"),
+    current_admin: models.User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    HTMX endpoint for real-time API usage stats
+    """
+    try:
+        if current_admin.role != models.UserRole.SUPER_ADMIN:
+            return '<div class="text-red-500">Access denied</div>'
+        
+        api_monitor = get_api_monitor(db)
+        stats = await api_monitor.get_usage_stats(days=days)
+        quota_usage = await api_monitor.get_current_quota_usage()
+        
+        return templates.TemplateResponse(
+            "partials/api_usage_stats.html",
+            {
+                "request": request,
+                "stats": stats,
+                "quota_usage": quota_usage,
+                "period_days": days
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error loading API usage stats: {str(e)}")
+        return '<div class="text-red-500">Error loading API usage stats</div>'

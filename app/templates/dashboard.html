@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Admin Dashboard | WhatsApp Order Bot{% endblock %}
+{% block title %}Admin Dashboard | ConvoCart{% endblock %}
 
 {% block page_title %}Dashboard{% endblock %}
 
@@ -27,61 +27,12 @@
         </div>
     </div>
 
-    <!-- Stats overview -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <div class="card bg-white p-6">
-            <div class="flex justify-between items-start">
-                <div>
-                    <p class="text-sm font-medium text-gray-500">Total Orders</p>
-                    <p class="text-3xl font-bold text-gray-900 mt-1">{{ total_orders }}</p>
-                </div>
-                <div class="rounded-full p-3 bg-blue-50">
-                    <i class="fas fa-shopping-bag text-blue-500"></i>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card bg-white p-6">
-            <div class="flex justify-between items-start">
-                <div>
-                    <p class="text-sm font-medium text-gray-500">Pending Orders</p>
-                    <p class="text-3xl font-bold text-yellow-600 mt-1">{{ pending_orders }}</p>
-                </div>
-                <div class="rounded-full p-3 bg-yellow-50">
-                    <i class="fas fa-clock text-yellow-500"></i>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card bg-white p-6">
-            <div class="flex justify-between items-start">
-                <div>
-                    <p class="text-sm font-medium text-gray-500">Completed Orders</p>
-                    <p class="text-3xl font-bold text-green-600 mt-1">{{ completed_orders }}</p>
-                </div>
-                <div class="rounded-full p-3 bg-green-50">
-                    <i class="fas fa-check-circle text-green-500"></i>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card bg-white p-6">
-            <div class="flex justify-between items-start">
-                <div>
-                    <p class="text-sm font-medium text-gray-500">Completion Rate</p>
-                    <p class="text-3xl font-bold text-indigo-600 mt-1">
-                        {% if total_orders > 0 %}
-                        {{ "%.1f"|format(completed_orders / total_orders * 100) }}%
-                        {% else %}
-                        N/A
-                        {% endif %}
-                    </p>
-                </div>
-                <div class="rounded-full p-3 bg-indigo-50">
-                    <i class="fas fa-chart-line text-indigo-500"></i>
-                </div>
-            </div>
-        </div>
+    <!-- Stats overview with HTMX real-time updates -->
+    <div hx-get="/htmx/dashboard-stats"
+         hx-trigger="load, every 30s"
+         hx-target="this"
+         hx-swap="outerHTML">
+        {% include 'partials/dashboard_stats.html' %}
     </div>
 
     <!-- Recent orders -->
