@@ -144,7 +144,7 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
         if not customer:
             logger.warning(f"No customer found and couldn't create one. Sending help message to {phone_number}")
             # Send a welcome message guiding them to use a proper link
-            welcome_msg = "👋 Welcome to our Order Bot!\n\n"
+            welcome_msg = "👋 Welcome to our ConvoCart!\n\n"
             welcome_msg += "It seems you're trying to place an order, but we couldn't identify which business you're trying to order from.\n\n"
             welcome_msg += "Please use the link that the business shared with you to start your order properly."
             whatsapp_service_with_db.send_text_message(phone_number, welcome_msg)
@@ -152,17 +152,17 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
         
         # Now handle the customer's message with AI-enhanced conversation context
         if SETTINGS.enable_ai_agent:
-            await handle_customer_message_with_ai_context(customer, event_data, db, current_group_id)
+            await handle_customer_message_with_ai_context(customer, event_data, db, current_group_id, whatsapp_service_with_db)
         else:
             # Fallback to original logic
-            await handle_customer_message_with_context(customer, event_data, db, current_group_id)
+            await handle_customer_message_with_context(customer, event_data, db, current_group_id, whatsapp_service_with_db)
         
         return {"success": True, "message": "Webhook processed successfully"}
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}")
         return {"success": False, "error": str(e)}
 
-async def handle_customer_message_with_ai_context(customer, event_data, db, current_group_id=None):
+async def handle_customer_message_with_ai_context(customer, event_data, db, current_group_id=None, whatsapp_service=None):
     """
     Process customer message using AI agent with LangGraph and Gemini
     """
@@ -201,7 +201,7 @@ async def handle_customer_message_with_ai_context(customer, event_data, db, curr
     except Exception as e:
         logger.error(f"Error in AI processing: {str(e)}. Falling back to original logic.")
         # Fallback to original logic on AI failure
-        await handle_customer_message_with_context(customer, event_data, db, current_group_id)
+        await handle_customer_message_with_context(customer, event_data, db, current_group_id, whatsapp_service)
 
 async def handle_ai_agent_response(ai_result: Dict[str, Any], customer, session, db, whatsapp_service, phone_number: str, group_id: int):
     """Handle the response from AI agent"""
@@ -417,7 +417,7 @@ async def handle_ai_payment_processing(phone_number: str, customer_id: int, paym
             }
         )
     
-async def handle_customer_message_with_context(customer, event_data, db, current_group_id=None):
+async def handle_customer_message_with_context(customer, event_data, db, current_group_id=None, whatsapp_service=None):
     """
     Process the customer message with conversation context awareness
     """

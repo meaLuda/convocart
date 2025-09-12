@@ -387,23 +387,27 @@ class WhatsAppService:
             # Extract basic message information
             message_sid = data.get("MessageSid")
             from_number = data.get("From", "").replace("whatsapp:", "")  # Remove whatsapp: prefix
+            to_number = data.get("To", "").replace("whatsapp:", "")
             body = data.get("Body", "")
+            message_status = data.get("MessageStatus")
             
-            if not from_number or not body:
-                logger.warning("Incomplete webhook data received from Twilio")
-                return None
-            
-            # For Twilio, we don't get contact names in webhooks
-            # You might want to store names when customers first interact
-            contact_name = "Unknown"
+            logger.info(f"Twilio webhook: MessageSid={message_sid}, From={from_number}, To={to_number}, Status={message_status}, Body={body[:50] if body else 'None'}")
             
             # Check if this is a status update (delivery receipt)
-            message_status = data.get("MessageStatus")
-            if message_status:
+            if message_status in ["delivered", "read", "failed", "undelivered"] and not body:
+                logger.info(f"Processing status update: {message_status} for message {message_sid}")
                 return self._process_twilio_status_update(data)
             
-            # Process as regular text message
+            # Check if this is an incoming message (has body and from customer)
+            if not from_number or not body:
+                logger.warning(f"Incomplete message data - From: {from_number}, Body: {body}")
+                return None
+            
+            # Process as regular text message from customer
             logger.info(f"Received Twilio WhatsApp message from {from_number}: {body[:50]}...")
+            
+            # For Twilio, we don't get contact names in webhooks
+            contact_name = "Unknown"
             
             return {
                 "phone_number": from_number,
