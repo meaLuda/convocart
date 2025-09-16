@@ -145,10 +145,31 @@ class OrderBotAgent:
             
             if not valid_messages:
                 logger.error(f"All {len(messages)} messages are empty or invalid after validation")
-                raise ValueError("All messages are empty or invalid")
+                # Create a fallback message instead of raising an error
+                from langchain_core.messages import HumanMessage
+                valid_messages = [HumanMessage(content="Please help me with my order.")]
+            
+            # Additional debug logging for Gemini API calls
+            logger.debug(f"Sending {len(valid_messages)} messages to Gemini API")
+            for i, msg in enumerate(valid_messages):
+                logger.debug(f"Message {i}: {type(msg).__name__} - Content: {getattr(msg, 'content', 'NO_CONTENT')[:100]}")
                 
+            # Final validation: ensure all messages have content
+            final_messages = []
+            for msg in valid_messages:
+                if hasattr(msg, 'content') and msg.content and str(msg.content).strip():
+                    final_messages.append(msg)
+                else:
+                    logger.warning(f"Dropping invalid message: {type(msg).__name__} with content: {repr(getattr(msg, 'content', 'NO_CONTENT'))}")
+            
+            # Ensure we have at least one valid message
+            if not final_messages:
+                logger.error("No valid messages for Gemini after final validation")
+                from langchain_core.messages import HumanMessage
+                final_messages = [HumanMessage(content="Hello, please help me.")]
+            
             # Use invoke for synchronous call wrapped in rate limiter
-            response = self.llm.invoke(valid_messages)
+            response = self.llm.invoke(final_messages)
             
             # Check for empty response due to safety filtering
             if not response or not hasattr(response, 'content') or not response.content.strip():
@@ -217,10 +238,11 @@ class OrderBotAgent:
             system_prompt = self._build_intent_detection_prompt(customer, group, state)
             
             # Use Gemini to detect intent with rate limiting
+            # Since we have convert_system_message_to_human=True, let's use HumanMessage directly
+            combined_prompt = f"{system_prompt}\n\nCustomer message: {latest_message.content}"
             response = await self._rate_limited_llm_call([
-                SystemMessage(content=system_prompt),
-                latest_message
-            ], estimated_tokens=len(system_prompt) + len(latest_message.content))
+                HumanMessage(content=combined_prompt)
+            ], estimated_tokens=len(combined_prompt))
             
             # Parse intent from response
             detected_intent = self._parse_intent_from_response(response.content)
@@ -408,13 +430,14 @@ class OrderBotAgent:
     
     def _build_intent_detection_prompt(self, customer: Customer, group: Group, state: AgentState) -> str:
         """Build context-aware prompt for intent detection"""
-        group_name = group.name if group else "Our Business"
-        customer_name = customer.name if customer else "Customer"
-        
-        # Ensure we have valid data for prompt construction
-        conversation_state = state.get('conversation_state', 'initial') if state else 'initial'
-        
-        prompt = f"""You are an AI assistant for {group_name}, helping customers via WhatsApp.
+        try:
+            group_name = group.name if group and group.name else "Our Business"
+            customer_name = customer.name if customer and customer.name else "Customer"
+            
+            # Ensure we have valid data for prompt construction
+            conversation_state = state.get('conversation_state', 'initial') if state else 'initial'
+            
+            prompt = f"""You are an AI assistant for {group_name}, helping customers via WhatsApp.
 
 Customer: {customer_name}
 Current conversation state: {conversation_state}
@@ -431,12 +454,16 @@ Your task is to detect the customer's intent from their message. Respond with ON
 
 Consider the conversation context and respond with just the intent name."""
 
-        # Validate prompt is not empty
-        if not prompt or len(prompt.strip()) < 10:
-            logger.error("Generated intent detection prompt is too short or empty")
-            prompt = """You are a helpful AI assistant. Analyze the customer's message and respond with one of these intents: place_order, track_order, cancel_order, mpesa_payment, cash_payment, contact_support, general_inquiry, or unknown."""
-        
-        return prompt.strip()
+            # Validate prompt is not empty
+            if not prompt or len(prompt.strip()) < 10:
+                logger.error("Generated intent detection prompt is too short or empty")
+                prompt = """You are a helpful AI assistant. Analyze the customer's message and respond with one of these intents: place_order, track_order, cancel_order, mpesa_payment, cash_payment, contact_support, general_inquiry, or unknown."""
+            
+            return prompt.strip()
+            
+        except Exception as e:
+            logger.error(f"Error building intent detection prompt: {e}")
+            return """You are a helpful AI assistant. Analyze the customer's message and respond with one of these intents: place_order, track_order, cancel_order, mpesa_payment, cash_payment, contact_support, general_inquiry, or unknown."""
     
     def _parse_intent_from_response(self, response: str) -> str:
         """Parse intent from Gemini response"""
@@ -496,7 +523,7 @@ Example: {{"items": [{{"name": "T-shirt", "quantity": 2, "notes": "size L, red c
 Customer message: {message}
 """
             
-            response = await self._rate_limited_llm_call([SystemMessage(content=prompt)], 
+            response = await self._rate_limited_llm_call([HumanMessage(content=prompt)], 
                                                         estimated_tokens=len(prompt))
             
             # Try to parse JSON response
@@ -570,7 +597,7 @@ Generate a helpful, personalized response. Keep it:
 
 Response:"""
             
-            response = await self._rate_limited_llm_call([SystemMessage(content=prompt)], 
+            response = await self._rate_limited_llm_call([HumanMessage(content=prompt)], 
                                                         estimated_tokens=len(prompt))
             return response.content
             
@@ -604,7 +631,7 @@ If you cannot extract clear order details, return null.
 Customer message: {message}
 """
             
-            response = await self._rate_limited_llm_call([SystemMessage(content=prompt)], 
+            response = await self._rate_limited_llm_call([HumanMessage(content=prompt)], 
                                                         estimated_tokens=len(prompt))
             
             try:
@@ -966,64 +993,73 @@ Customer message: {message}
         valid_messages = []
         
         for i, msg in enumerate(messages):
-            # Get message content safely
-            content = getattr(msg, 'content', '')
-            
-            # Skip messages with no content attribute
-            if not hasattr(msg, 'content'):
-                logger.warning(f"Message {i}: {type(msg).__name__} has no content attribute")
-                continue
-            
-            # Clean and validate content
-            if isinstance(content, str):
-                content = content.strip()
-                if not content:
-                    logger.warning(f"Message {i}: {type(msg).__name__} has empty content")
-                    continue
-                    
-                # Ensure minimum content length for Gemini
-                if len(content) < 3:
-                    logger.warning(f"Message {i}: {type(msg).__name__} content too short: '{content}'")
-                    continue
-                    
-            elif isinstance(content, list):
-                # Handle multimodal content (list format)
-                valid_parts = []
-                for part in content:
-                    if isinstance(part, dict) and part.get('text', '').strip():
-                        valid_parts.append(part)
-                    elif isinstance(part, dict) and part.get('type') == 'image_url':
-                        valid_parts.append(part)
-                
-                if not valid_parts:
-                    logger.warning(f"Message {i}: {type(msg).__name__} has no valid content parts")
-                    continue
-                    
-                # Update content with valid parts only
-                content = valid_parts
-            else:
-                logger.warning(f"Message {i}: {type(msg).__name__} has invalid content type: {type(content)}")
-                continue
-            
-            # Create new message with cleaned content
-            # LangChain messages don't have _type attribute, they use class type directly
             try:
-                msg_type = type(msg)
-                clean_msg = msg_type(content=content)
-                valid_messages.append(clean_msg)
+                # Log original message details for debugging
+                logger.debug(f"Processing message {i}: {type(msg).__name__} with attributes: {dir(msg)}")
                 
-                if self.settings.ai_debug_mode:
-                    content_preview = content[:50] if isinstance(content, str) else f"[{len(content)} parts]"
-                    logger.debug(f"Valid message {i}: {type(msg).__name__} - Content: {content_preview}")
-            except Exception as create_error:
-                logger.warning(f"Message {i}: Failed to create {type(msg).__name__} with cleaned content: {create_error}")
+                # Get message content safely
+                content = getattr(msg, 'content', '')
+                logger.debug(f"Message {i} content type: {type(content)}, value: {repr(content)}")
+                
+                # Skip messages with no content attribute
+                if not hasattr(msg, 'content'):
+                    logger.warning(f"Message {i}: {type(msg).__name__} has no content attribute")
+                    continue
+                
+                # Clean and validate content
+                if isinstance(content, str):
+                    content = content.strip()
+                    if not content:
+                        logger.warning(f"Message {i}: {type(msg).__name__} has empty content")
+                        continue
+                        
+                    # Ensure minimum content length for Gemini
+                    if len(content) < 3:
+                        logger.warning(f"Message {i}: {type(msg).__name__} content too short: '{content}'")
+                        continue
+                        
+                elif isinstance(content, list):
+                    # Handle multimodal content (list format)
+                    valid_parts = []
+                    for part in content:
+                        if isinstance(part, dict) and part.get('text', '').strip():
+                            valid_parts.append(part)
+                        elif isinstance(part, dict) and part.get('type') == 'image_url':
+                            valid_parts.append(part)
+                    
+                    if not valid_parts:
+                        logger.warning(f"Message {i}: {type(msg).__name__} has no valid content parts")
+                        continue
+                        
+                    # Update content with valid parts only
+                    content = valid_parts
+                else:
+                    logger.warning(f"Message {i}: {type(msg).__name__} has invalid content type: {type(content)}")
+                    continue
+                
+                # Create new message with cleaned content
+                # LangChain messages don't have _type attribute, they use class type directly
+                try:
+                    msg_type = type(msg)
+                    clean_msg = msg_type(content=content)
+                    valid_messages.append(clean_msg)
+                    
+                    if self.settings.ai_debug_mode:
+                        content_preview = content[:50] if isinstance(content, str) else f"[{len(content)} parts]"
+                        logger.debug(f"Valid message {i}: {type(msg).__name__} - Content: {content_preview}")
+                except Exception as create_error:
+                    logger.warning(f"Message {i}: Failed to create {type(msg).__name__} with cleaned content: {create_error}")
+                    continue
+                    
+            except Exception as e:
+                logger.warning(f"Message {i}: Error processing message: {e}")
                 continue
         
         # Ensure we have at least one message for Gemini
         if not valid_messages:
             logger.error("No valid messages after cleaning - creating fallback human message")
             from langchain_core.messages import HumanMessage
-            valid_messages.append(HumanMessage(content="Hello"))
+            valid_messages.append(HumanMessage(content="Please help me with my order."))
         
         # Log final message count
         if self.settings.ai_debug_mode:

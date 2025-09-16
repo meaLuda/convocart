@@ -118,7 +118,9 @@ class AnalyticsService:
                 ).first()
             
             if not customer_analytics:
-                return self._get_popular_products(customer_analytics.group_id if customer_analytics else None, limit)
+                customer = self.db.query(Customer).filter(Customer.id == customer_id).first()
+                group_id = customer.group_id if customer else None
+                return self._get_popular_products(group_id, limit)
             
             # Get recommendations based on different strategies
             collaborative_recs = self._get_collaborative_recommendations(customer_id, limit)
@@ -799,7 +801,7 @@ class AnalyticsService:
             query = self.db.query(
                 Product.id,
                 Product.name,
-                Product.price,
+                Product.base_price,
                 func.count(OrderItem.id).label('order_count'),
                 func.sum(OrderItem.quantity).label('total_quantity')
             ).join(
@@ -814,7 +816,7 @@ class AnalyticsService:
             
             # Get most popular products
             popular_products = query.group_by(
-                Product.id, Product.name, Product.price
+                Product.id, Product.name, Product.base_price
             ).order_by(
                 desc('order_count'), desc('total_quantity')
             ).limit(limit).all()
@@ -824,8 +826,8 @@ class AnalyticsService:
             for product in popular_products:
                 recommendations.append({
                     'product_id': product.id,
-                    'product_name': product.name,
-                    'price': float(product.price),
+                    'name': product.name,
+                    'price': float(product.base_price),
                     'popularity_score': float(product.order_count * product.total_quantity),
                     'reason': f'Popular item (ordered {product.order_count} times)'
                 })
