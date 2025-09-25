@@ -1,9 +1,14 @@
 import json
 import logging
+import requests
+import os
+from datetime import datetime
+from pathlib import Path
 from typing import Dict, Any, Optional, List
 from twilio.rest import Client
 from twilio.base import values
 from app.config import get_settings
+from app.utils.security import SecurityValidator
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -473,6 +478,164 @@ class WhatsAppService:
         except Exception as e:
             logger.error(f"Error processing Twilio status update: {str(e)}")
             return None
+    
+    def download_media(self, media_sid: str, media_url: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Download media from WhatsApp/Twilio and return file information
+        """
+        try:
+            # Create media directory if it doesn't exist
+            media_dir = Path("media/whatsapp")
+            media_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Get media resource from Twilio
+            if not media_url:
+                media_resource = self.client.api.v2010.accounts(self.client.account_sid).messages(media_sid).media.list()[0]
+                media_url = f"https://api.twilio.com{media_resource.uri}"
+            
+            # Make authenticated request to download media
+            auth = (self.client.username, self.client.password)
+            response = requests.get(media_url, auth=auth, stream=True)
+            response.raise_for_status()
+            
+            # Get content type and validate
+            content_type = response.headers.get('content-type', '')
+            if not SecurityValidator.validate_media_type(content_type):
+                logger.warning(f"Invalid media type: {content_type}")
+                return None
+            
+            # Generate safe filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_extension = self._get_extension_from_content_type(content_type)
+            filename = f"{media_sid}_{timestamp}{file_extension}"
+            safe_filename = SecurityValidator.sanitize_filename(filename)
+            
+            # Save file
+            file_path = media_dir / safe_filename
+            with open(file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            # Get file size and validate
+            file_size = file_path.stat().st_size
+            max_size = 16 * 1024 * 1024  # 16MB max
+            
+            if file_size > max_size:
+                logger.warning(f"File too large: {file_size} bytes > {max_size}")
+                file_path.unlink()  # Delete file
+                return None
+            
+            logger.info(f"Downloaded media: {safe_filename} ({file_size} bytes)")
+            
+            return {
+                "media_sid": media_sid,
+                "filename": safe_filename,
+                "file_path": str(file_path),
+                "content_type": content_type,
+                "file_size": file_size,
+                "downloaded_at": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error downloading media {media_sid}: {str(e)}")
+            return None
+    
+    def _get_extension_from_content_type(self, content_type: str) -> str:
+        """Get file extension from content type"""
+        extensions = {
+            'image/jpeg': '.jpg',
+            'image/jpg': '.jpg',
+            'image/png': '.png',
+            'image/gif': '.gif',
+            'image/webp': '.webp',
+            'audio/aac': '.aac',
+            'audio/mp4': '.m4a',
+            'audio/mpeg': '.mp3',
+            'audio/amr': '.amr',
+            'audio/ogg': '.ogg',
+            'video/mp4': '.mp4',
+            'video/3gpp': '.3gp',
+            'application/pdf': '.pdf',
+            'text/plain': '.txt',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx'
+        }
+        return extensions.get(content_type.lower(), '.bin')
+    
+    def process_media_message(self, webhook_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Process incoming media message from WhatsApp
+        """
+        try:
+            # Extract media information from webhook
+            if webhook_data.get('MessageType') not in ['image', 'audio', 'video', 'document']:
+                return None
+            
+            media_sid = webhook_data.get('MediaSid')
+            media_url = webhook_data.get('MediaUrl')
+            media_content_type = webhook_data.get('MediaContentType')
+            
+            if not media_sid:
+                logger.warning("No MediaSid in webhook data")
+                return None
+            
+            # Download the media
+            media_info = self.download_media(media_sid, media_url)
+            if not media_info:
+                return None
+            
+            # Add additional webhook info
+            media_info.update({
+                "message_sid": webhook_data.get('MessageSid'),
+                "from_number": webhook_data.get('From'),
+                "message_type": webhook_data.get('MessageType'),
+                "caption": webhook_data.get('Body', ''),  # Caption text if any
+            })
+            
+            return media_info
+            
+        except Exception as e:
+            logger.error(f"Error processing media message: {str(e)}")
+            return None
+    
+    def send_media_message(self, to: str, media_url: str, caption: str = "", media_type: str = "image") -> bool:
+        """
+        Send a media message via WhatsApp
+        """
+        try:
+            to_whatsapp = f"whatsapp:{to}" if not to.startswith('whatsapp:') else to
+            from_whatsapp = self.whatsapp_number
+            
+            if media_type == "image":
+                message = self.client.messages.create(
+                    body=caption,
+                    media_url=media_url,
+                    from_=from_whatsapp,
+                    to=to_whatsapp
+                )
+            elif media_type == "document":
+                message = self.client.messages.create(
+                    body=caption,
+                    media_url=media_url,
+                    from_=from_whatsapp,
+                    to=to_whatsapp
+                )
+            else:
+                # For audio/video, similar approach
+                message = self.client.messages.create(
+                    body=caption,
+                    media_url=media_url,
+                    from_=from_whatsapp,
+                    to=to_whatsapp
+                )
+            
+            logger.info(f"Sent {media_type} message {message.sid} to {to}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error sending {media_type} message: {str(e)}")
+            return False
 
 
 # Helper function to get an initialized WhatsApp service

@@ -126,7 +126,7 @@ class User(Base, TimestampMixin):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(100), unique=True, index=True, nullable=True)
-    phone_number = Column(String(20), unique=True, index=True, nullable=True)
+    phone_number = Column(String(25), unique=True, index=True, nullable=True)
     password_hash = Column(String(255), nullable=False)
     full_name = Column(String(100), nullable=True)
     role = Column(Enum(UserRole), default=UserRole.CLIENT_ADMIN, nullable=False)
@@ -188,7 +188,7 @@ class Customer(Base, TimestampMixin):
     id = Column(Integer, primary_key=True, index=True)
     group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
     name = Column(String(100), nullable=False)
-    phone_number = Column(String(20), nullable=False, index=True)
+    phone_number = Column(String(25), nullable=False, index=True)
 
     # New field to track the current session group context
     active_group_id = Column(
@@ -241,7 +241,7 @@ class Group(Base, TimestampMixin):
     welcome_message = Column(Text, nullable=True)
     logo_url = Column(String(255), nullable=True)
     contact_email = Column(String(100), nullable=True)
-    contact_phone = Column(String(20), nullable=True)
+    contact_phone = Column(String(25), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     
     # Business-specific settings
@@ -281,7 +281,7 @@ class MessageDeliveryStatus(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     message_id = Column(String(255), unique=True, index=True, nullable=False)  # WhatsApp message ID
-    recipient_phone = Column(String(20), nullable=False)
+    recipient_phone = Column(String(25), nullable=False)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
     
@@ -740,5 +740,51 @@ class CustomerAnalytics(Base, TimestampMixin):
     # Relationships
     customer = relationship("Customer", backref="analytics")
     group = relationship("Group", backref="customer_analytics")
+
+
+class MediaAttachment(Base, TimestampMixin):
+    """Model for storing WhatsApp media attachments"""
+    
+    __tablename__ = "media_attachments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # WhatsApp/Twilio identifiers
+    media_sid = Column(String(100), nullable=False, unique=True, index=True)
+    message_sid = Column(String(100), nullable=True, index=True)
+    
+    # Customer and group context
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=True, index=True)
+    
+    # File information
+    filename = Column(String(255), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    content_type = Column(String(100), nullable=False)
+    file_size = Column(Integer, nullable=False)
+    
+    # Message information
+    media_type = Column(String(20), nullable=False)  # image, audio, video, document
+    caption = Column(Text, nullable=True)
+    from_number = Column(String(25), nullable=True)
+    
+    # Processing status
+    is_processed = Column(Boolean, default=False)
+    processing_error = Column(Text, nullable=True)
+    
+    # Security flags
+    is_safe = Column(Boolean, default=True)
+    security_scan_result = Column(JsonGettable, nullable=True)
+    
+    # Metadata
+    download_timestamp = Column(DateTime, nullable=True)
+    media_metadata = Column(JsonGettable, nullable=True)
+    
+    # Relationships
+    customer = relationship("Customer", backref="media_attachments")
+    group = relationship("Group", backref="media_attachments")
+    
+    def __repr__(self):
+        return f"<MediaAttachment(media_sid='{self.media_sid}', type='{self.media_type}', filename='{self.filename}')>"
 
 

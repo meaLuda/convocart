@@ -36,55 +36,78 @@
     {% block head %}{% endblock %}
 </head>
 <body class="flex flex-col min-h-screen bg-gray-50">
-    <header class="bg-primary-500 text-white shadow-md">
+    <header class="navbar">
         <div class="container mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center py-4">
-                <a href="/admin/dashboard" class="flex items-center space-x-2">
-                    <img src="/static/img/trolley.png" alt="ConvoCart Icon" class="h-8 w-auto">
-                    <span class="font-heading font-bold text-xl">ConvoCart</span>
+                <a href="/admin/dashboard" class="navbar-brand">
+                    <div class="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+                        <img src="/static/img/trolley.png" alt="ConvoCart Icon" class="h-6 w-auto">
+                    </div>
+                    <div>
+                        <span class="font-heading font-bold text-xl">ConvoCart</span>
+                        <div class="text-xs text-primary-100">Admin Panel</div>
+                    </div>
                 </a>
                 {% if not admin %}
-                <a href="/admin/login" class="flex justify-end items-center space-x-2">
-                    <span class="font-heading font-bold text-xl">login</span>
+                <a href="/admin/login" class="btn btn-outline border-white text-white hover:bg-white hover:text-primary-600">
+                    <i class="fas fa-sign-in-alt mr-2"></i>
+                    Login
                 </a>
                 {% endif %}
                 
                 {% if admin %}
-                <nav class="hidden md:flex space-x-6">
-                    <a href="/admin/dashboard" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path == '/admin/dashboard' else '' }}">
+                <nav class="hidden lg:flex navbar-nav">
+                    <a href="/admin/dashboard" class="navbar-link {{ 'navbar-link-active' if request.url.path == '/admin/dashboard' else '' }}">
                         <i class="fas fa-tachometer-alt"></i>
                         <span>Dashboard</span>
                     </a>
-                    <a href="/admin/orders" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path == '/admin/orders' else '' }}">
+                    <a href="/admin/orders" class="navbar-link {{ 'navbar-link-active' if request.url.path == '/admin/orders' else '' }}">
                         <i class="fas fa-shopping-cart"></i>
                         <span>Orders</span>
                     </a>
-                    <a href="/admin/groups" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path.startswith('/admin/groups') else '' }}">
+                    <a href="/admin/groups" class="navbar-link {{ 'navbar-link-active' if request.url.path.startswith('/admin/groups') else '' }}">
                         <i class="fas fa-users"></i>
                         <span>Groups</span>
                     </a>
                     {% if admin.role.value == 'super_admin' %}
-                    <a href="/admin/users" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path.startswith('/admin/users') else '' }}">
+                    <a href="/admin/users" class="navbar-link {{ 'navbar-link-active' if request.url.path.startswith('/admin/users') else '' }}">
                         <i class="fas fa-user-cog"></i>
                         <span>Users</span>
                     </a>
-                    <a href="/admin/api-usage" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path == '/admin/api-usage' else '' }}">
+                    <a href="/admin/api-usage" class="navbar-link {{ 'navbar-link-active' if request.url.path == '/admin/api-usage' else '' }}">
                         <i class="fas fa-chart-bar"></i>
-                        <span>API Usage</span>
+                        <span>Analytics</span>
                     </a>
                     {% endif %}
-                    <a href="/admin/settings" class="flex items-center space-x-1 hover:text-white/80 transition-colors {{ 'border-b-2 border-white pb-1' if request.url.path == '/admin/settings' else '' }}">
+                    <a href="/admin/settings" class="navbar-link {{ 'navbar-link-active' if request.url.path == '/admin/settings' else '' }}">
                         <i class="fas fa-cog"></i>
                         <span>Settings</span>
                     </a>
-                    <a href="/admin/logout" class="flex items-center space-x-1 hover:text-white/80 transition-colors">
-                        <i class="fas fa-sign-out-alt"></i>
-                        <span>Logout</span>
-                    </a>
+                    
+                    <!-- User Profile Dropdown -->
+                    <div class="relative group">
+                        <button class="navbar-link">
+                            <div class="w-8 h-8 bg-primary-700 rounded-lg flex items-center justify-center text-sm font-bold">
+                                {{ admin.username[:1]|upper }}
+                            </div>
+                            <span class="hidden xl:inline">{{ admin.username }}</span>
+                            <i class="fas fa-chevron-down text-xs"></i>
+                        </button>
+                        <div class="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg py-2 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-50">
+                            <div class="px-4 py-2 border-b border-gray-100">
+                                <div class="font-medium text-gray-800">{{ admin.full_name or admin.username }}</div>
+                                <div class="text-sm text-gray-500">{{ admin.role.value|replace('_', ' ')|title }}</div>
+                            </div>
+                            <a href="/admin/logout" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center">
+                                <i class="fas fa-sign-out-alt mr-2"></i>
+                                Logout
+                            </a>
+                        </div>
+                    </div>
                 </nav>
                 
                 <!-- Mobile menu button -->
-                <button id="mobile-menu-button" class="md:hidden flex items-center p-2 rounded-md hover:bg-primary-600 focus:outline-none">
+                <button id="mobile-menu-button" class="lg:hidden flex items-center p-2 rounded-xl hover:bg-primary-700 focus:outline-none transition-colors">
                     <i class="fas fa-bars text-white text-lg"></i>
                 </button>
                 {% endif %}
@@ -126,7 +149,37 @@
         </div>
     </header>
     
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+    
     <main class="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-6 space-y-4">
+                    {% for category, message in messages %}
+                    <div class="alert alert-{{ 'error' if category == 'error' else 'success' if category == 'success' else 'warning' if category == 'warning' else 'info' }} alert-dismissible" 
+                         data-alert-auto-dismiss="5000">
+                        <div class="alert-icon">
+                            <i class="fas 
+                                {% if category == 'error' %}fa-exclamation-circle
+                                {% elif category == 'success' %}fa-check-circle
+                                {% elif category == 'warning' %}fa-exclamation-triangle
+                                {% else %}fa-info-circle
+                                {% endif %}"></i>
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-medium">{{ message }}</p>
+                        </div>
+                        <button type="button" class="alert-close" onclick="dismissAlert(this)" aria-label="Close">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        
         {% block content %}{% endblock %}
     </main>
     
@@ -151,7 +204,7 @@
     
     <script>
         // Mobile menu toggle
-        document.getElementById('mobile-menu-button').addEventListener('click', function() {
+        document.getElementById('mobile-menu-button')?.addEventListener('click', function() {
             const menu = document.getElementById('mobile-menu');
             menu.classList.toggle('hidden');
         });
@@ -161,10 +214,234 @@
             const menu = document.getElementById('mobile-menu');
             const button = document.getElementById('mobile-menu-button');
             
-            if (!menu.contains(event.target) && !button.contains(event.target) && !menu.classList.contains('hidden')) {
+            if (menu && button && !menu.contains(event.target) && !button.contains(event.target) && !menu.classList.contains('hidden')) {
                 menu.classList.add('hidden');
             }
         });
+        
+        // Alert System
+        function dismissAlert(button) {
+            const alert = button.closest('.alert');
+            alert.style.opacity = '0';
+            alert.style.transform = 'translateY(-10px)';
+            setTimeout(() => alert.remove(), 300);
+        }
+        
+        // Auto-dismiss alerts
+        document.addEventListener('DOMContentLoaded', function() {
+            const alertsWithAutoDismiss = document.querySelectorAll('[data-alert-auto-dismiss]');
+            alertsWithAutoDismiss.forEach(alert => {
+                const delay = parseInt(alert.dataset.alertAutoDismiss) || 5000;
+                setTimeout(() => {
+                    if (alert.parentNode) {
+                        dismissAlert(alert.querySelector('.alert-close'));
+                    }
+                }, delay);
+            });
+        });
+        
+        // Toast Notification System
+        const ToastManager = {
+            container: null,
+            
+            init() {
+                this.container = document.getElementById('toast-container');
+                if (!this.container) {
+                    this.container = document.createElement('div');
+                    this.container.id = 'toast-container';
+                    this.container.className = 'toast-container';
+                    document.body.appendChild(this.container);
+                }
+            },
+            
+            show(message, type = 'info', duration = 5000) {
+                this.init();
+                
+                const toast = document.createElement('div');
+                toast.className = `toast toast-${type} toast-enter`;
+                
+                const iconMap = {
+                    success: 'fa-check-circle text-success-500',
+                    error: 'fa-exclamation-circle text-error-500',
+                    warning: 'fa-exclamation-triangle text-warning-500',
+                    info: 'fa-info-circle text-secondary-500'
+                };
+                
+                toast.innerHTML = `
+                    <div class="flex-shrink-0">
+                        <i class="fas ${iconMap[type] || iconMap.info}"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-gray-900">${message}</p>
+                    </div>
+                    <button onclick="ToastManager.dismiss(this)" class="flex-shrink-0 text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                
+                this.container.appendChild(toast);
+                
+                // Trigger enter animation
+                setTimeout(() => toast.classList.add('toast-enter-active'), 50);
+                
+                // Auto dismiss
+                if (duration > 0) {
+                    setTimeout(() => this.dismiss(toast.querySelector('button')), duration);
+                }
+                
+                return toast;
+            },
+            
+            dismiss(button) {
+                const toast = button.closest('.toast');
+                if (!toast) return;
+                
+                toast.classList.remove('toast-enter-active');
+                toast.classList.add('toast-exit');
+                setTimeout(() => toast.remove(), 300);
+            },
+            
+            success(message, duration) { return this.show(message, 'success', duration); },
+            error(message, duration) { return this.show(message, 'error', duration); },
+            warning(message, duration) { return this.show(message, 'warning', duration); },
+            info(message, duration) { return this.show(message, 'info', duration); }
+        };
+        
+        // Form Enhancement
+        function enhanceForm(formElement) {
+            if (!formElement) return;
+            
+            const submitButton = formElement.querySelector('button[type="submit"]');
+            if (!submitButton) return;
+            
+            formElement.addEventListener('submit', function(e) {
+                // Add loading state
+                submitButton.classList.add('btn-loading');
+                submitButton.disabled = true;
+                
+                // Add spinner if not exists
+                if (!submitButton.querySelector('.btn-spinner')) {
+                    const spinner = document.createElement('div');
+                    spinner.className = 'btn-spinner';
+                    spinner.innerHTML = '<div class="loading-spinner"></div>';
+                    submitButton.appendChild(spinner);
+                }
+            });
+            
+            // Remove loading state on page unload or error
+            window.addEventListener('beforeunload', () => {
+                submitButton.classList.remove('btn-loading');
+                submitButton.disabled = false;
+            });
+        }
+        
+        // Form Validation
+        function validateField(field, rules = {}) {
+            const value = field.value.trim();
+            const container = field.closest('.form-group') || field.parentElement;
+            let isValid = true;
+            let message = '';
+            
+            // Remove existing validation
+            field.classList.remove('form-field-valid', 'form-field-invalid', 'pulse-error');
+            const existingFeedback = container.querySelector('.form-error');
+            if (existingFeedback) existingFeedback.remove();
+            
+            // Required validation
+            if (rules.required && !value) {
+                isValid = false;
+                message = `${rules.label || 'This field'} is required`;
+            }
+            
+            // Email validation
+            if (isValid && rules.email && value) {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(value)) {
+                    isValid = false;
+                    message = 'Please enter a valid email address';
+                }
+            }
+            
+            // Min length validation
+            if (isValid && rules.minLength && value.length < rules.minLength) {
+                isValid = false;
+                message = `${rules.label || 'This field'} must be at least ${rules.minLength} characters`;
+            }
+            
+            // Apply validation state
+            if (!isValid) {
+                field.classList.add('form-field-invalid', 'pulse-error');
+                const feedback = document.createElement('div');
+                feedback.className = 'form-error';
+                feedback.textContent = message;
+                container.appendChild(feedback);
+            } else if (value) {
+                field.classList.add('form-field-valid');
+            }
+            
+            return isValid;
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Enhance all forms
+            document.querySelectorAll('form').forEach(enhanceForm);
+            
+            // Global error handler for fetch requests
+            window.handleApiError = function(error, fallbackMessage = 'An error occurred') {
+                console.error('API Error:', error);
+                let message = fallbackMessage;
+                
+                if (error.response) {
+                    try {
+                        const data = JSON.parse(error.response);
+                        message = data.detail || data.message || message;
+                    } catch (e) {
+                        message = error.response;
+                    }
+                } else if (error.message) {
+                    message = error.message;
+                }
+                
+                ToastManager.error(message);
+            };
+        });
+        
+        // CSRF Token Helper
+        function getCsrfToken() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'csrftoken') {
+                    return value;
+                }
+            }
+            return '';
+        }
+        
+        // Automatically add CSRF token to all form submissions
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('form').forEach(form => {
+                // Skip GET forms and forms that already have CSRF token
+                if (form.method.toUpperCase() !== 'GET' && !form.querySelector('input[name="csrf_token"]')) {
+                    const token = getCsrfToken();
+                    if (token) {
+                        // Add hidden CSRF token field
+                        const csrfInput = document.createElement('input');
+                        csrfInput.type = 'hidden';
+                        csrfInput.name = 'csrf_token';
+                        csrfInput.value = token;
+                        form.appendChild(csrfInput);
+                    }
+                }
+            });
+        });
+
+        // Make functions globally available
+        window.ToastManager = ToastManager;
+        window.validateField = validateField;
+        window.dismissAlert = dismissAlert;
+        window.getCsrfToken = getCsrfToken;
     </script>
     
     {% block scripts %}{% endblock %}

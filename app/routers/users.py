@@ -6,7 +6,6 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Request, Query
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.templating import Jinja2Templates
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -24,8 +23,10 @@ settings = get_settings()
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Setup templates
-templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
+# Import shared templates configuration
+from app.templates_config import templates
+from fastapi_csrf_protect import CsrfProtect
+
 
 # OAuth2 password bearer
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="admin/login")
@@ -86,21 +87,31 @@ async def get_current_admin(
 
 
 @router.get("/admin/login", response_class=HTMLResponse)
-async def login_page(request: Request):
+async def login_page(request: Request, csrf_protect: CsrfProtect = Depends(), error: Optional[str] = None):
     """
     Render the login page
     """
-    return templates.TemplateResponse("login.html", {"request": request})
+    csrf_token = csrf_protect.generate_csrf()
+    context = {"request": request, "csrf_token": csrf_token}
+    if error:
+        context["error_message"] = error
+    return templates.TemplateResponse("login.html", context)
 
 
 @router.post("/admin/login")
 async def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), 
+    request: Request,
+    csrf_protect: CsrfProtect = Depends(),
+    username: str = Form(...),
+    password: str = Form(...),
     db: Session = Depends(get_db)
 ):
     """
-    Login endpoint for admin users
+    Login endpoint for admin users with proper form handling
     """
+    # Validate CSRF token
+    csrf_protect.validate_csrf(request)
+    
     def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
         """
         Create a JWT access token
@@ -115,36 +126,90 @@ async def login(
         encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
         return encoded_jwt
     
-    user = db.query(models.User).filter(models.User.username == form_data.username).first()
-    
-    # Check if user exists, has admin role, and password is correct
-    if not user or user.role not in [models.UserRole.CLIENT_ADMIN, models.UserRole.SUPER_ADMIN] or not verify_password(form_data.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+    try:
+        # Input validation
+        if not username or not password:
+            context = {
+                "request": request,
+                "error_message": "Username and password are required",
+                "username": username
+            }
+            return templates.TemplateResponse("login.html", context, status_code=400)
+        
+        # Find user
+        user = db.query(models.User).filter(models.User.username == username).first()
+        
+        # Check if user exists
+        if not user:
+            logger.warning(f"Login attempt with non-existent username: {username}")
+            context = {
+                "request": request,
+                "error_message": "Invalid username or password",
+                "username": username
+            }
+            return templates.TemplateResponse("login.html", context, status_code=400)
+        
+        # Check if user has admin role
+        if user.role not in [models.UserRole.CLIENT_ADMIN, models.UserRole.SUPER_ADMIN]:
+            logger.warning(f"Login attempt by non-admin user: {username}")
+            context = {
+                "request": request,
+                "error_message": "Access denied. Admin privileges required.",
+                "username": username
+            }
+            return templates.TemplateResponse("login.html", context, status_code=403)
+        
+        # Check if user is active
+        if not user.is_active:
+            logger.warning(f"Login attempt by inactive user: {username}")
+            context = {
+                "request": request,
+                "error_message": "Account is inactive. Please contact administrator.",
+                "username": username
+            }
+            return templates.TemplateResponse("login.html", context, status_code=403)
+        
+        # Verify password
+        if not verify_password(password, user.password_hash):
+            logger.warning(f"Failed login attempt for user: {username}")
+            context = {
+                "request": request,
+                "error_message": "Invalid username or password",
+                "username": username
+            }
+            return templates.TemplateResponse("login.html", context, status_code=400)
+        
+        # Update last login timestamp
+        user.last_login = datetime.utcnow()
+        db.commit()
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.username}, expires_delta=access_token_expires
         )
-    
-    # Update last login timestamp
-    user.last_login = datetime.utcnow()
-    db.commit()
-    
-    # Create access token
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    
-    # Return token as cookie and redirect to dashboard
-    response = RedirectResponse(url="/admin/dashboard", status_code=303)
-    response.set_cookie(
-        key="access_token", 
-        value=f"Bearer {access_token}", 
-        httponly=True,
-        max_age=3600,  # 1 hour expiry
-        samesite="lax"  # This helps with security but allows redirects
-    )
-    return response
+        
+        logger.info(f"Successful login for user: {username}")
+        
+        # Return token as cookie and redirect to dashboard
+        response = RedirectResponse(url="/admin/dashboard", status_code=303)
+        response.set_cookie(
+            key="access_token", 
+            value=f"Bearer {access_token}", 
+            httponly=True,
+            max_age=3600,  # 1 hour expiry
+            samesite="lax"  # This helps with security but allows redirects
+        )
+        return response
+        
+    except Exception as e:
+        logger.error(f"Login error for user {username}: {str(e)}")
+        context = {
+            "request": request,
+            "error_message": "An error occurred during login. Please try again.",
+            "username": username
+        }
+        return templates.TemplateResponse("login.html", context, status_code=500)
 
 @router.get("/admin/logout")
 async def logout():
@@ -1606,3 +1671,153 @@ async def htmx_api_usage_stats(
     except Exception as e:
         logger.error(f"Error loading API usage stats: {str(e)}")
         return '<div class="text-red-500">Error loading API usage stats</div>'
+
+
+@router.post("/admin/send-customer-message")
+async def send_customer_message(
+    request: Request,
+    customer_phone: str = Form(...),
+    message: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Send a message to a customer from the admin dashboard
+    """
+    # Authentication check
+    current_admin = await get_current_admin(request, db)
+    if isinstance(current_admin, RedirectResponse):
+        return {"success": False, "message": "Authentication required"}
+    
+    try:
+        # Validate inputs
+        if not customer_phone or not message:
+            return {"success": False, "message": "Customer phone and message are required"}
+        
+        # Apply security validation to the message
+        from app.utils.security import SecurityValidator
+        sanitized_message = SecurityValidator.sanitize_user_input(message)
+        
+        if len(sanitized_message) < len(message) * 0.5:
+            return {"success": False, "message": "Message contains unsafe content and was rejected"}
+        
+        # Validate phone number
+        if not SecurityValidator.validate_phone_number(customer_phone):
+            return {"success": False, "message": "Invalid phone number format"}
+        
+        # Find the customer
+        customer = db.query(models.Customer).filter(
+            models.Customer.phone_number == customer_phone
+        ).first()
+        
+        if not customer:
+            return {"success": False, "message": "Customer not found"}
+        
+        # Check if admin has access to this customer's group
+        if current_admin.role != models.UserRole.SUPER_ADMIN:
+            admin_group_ids = [group.id for group in current_admin.groups]
+            if customer.group_id not in admin_group_ids:
+                return {"success": False, "message": "Access denied: Customer belongs to a different group"}
+        
+        # Send the message via WhatsApp
+        from app.services.whatsapp import WhatsAppService
+        whatsapp_service = WhatsAppService(db)
+        
+        # Add admin signature to message
+        admin_signature = f"\n\n— Sent by {current_admin.username} from {customer.group.name if customer.group else 'Admin'}"
+        final_message = sanitized_message + admin_signature
+        
+        result = whatsapp_service.send_text_message(customer_phone, final_message)
+        
+        if result.get("success", False):            
+            logger.info(f"Admin {current_admin.username} sent message to customer {customer_phone}")
+            return {
+                "success": True, 
+                "message": f"Message sent successfully to {customer.name or customer_phone}"
+            }
+        else:
+            error_msg = result.get("error", "Unknown error occurred")
+            return {"success": False, "message": f"Failed to send message: {error_msg}"}
+            
+    except Exception as e:
+        logger.error(f"Error sending admin message: {str(e)}")
+        return {"success": False, "message": f"Error: {str(e)}"}
+
+
+@router.get("/admin/customers", response_class=HTMLResponse)
+async def list_customers(
+    request: Request,
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    search: Optional[str] = Query(None)
+):
+    """
+    List customers with messaging capabilities
+    """
+    # Authentication check
+    current_admin = await get_current_admin(request, db)
+    if isinstance(current_admin, RedirectResponse):
+        return current_admin
+    
+    try:
+        # Base query for customers
+        query = db.query(models.Customer)
+        
+        # Filter by groups if not super admin
+        if current_admin.role != models.UserRole.SUPER_ADMIN:
+            if not current_admin.groups:
+                query = query.filter(False)  # Empty result set
+            else:
+                group_ids = [group.id for group in current_admin.groups]
+                query = query.filter(models.Customer.group_id.in_(group_ids))
+        
+        # Apply search filter if provided
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                (models.Customer.name.ilike(search_term)) |
+                (models.Customer.phone_number.ilike(search_term))
+            )
+        
+        # Pagination
+        page_size = 20
+        offset = (page - 1) * page_size
+        total_customers = query.count()
+        customers = query.offset(offset).limit(page_size).all()
+        
+        # Calculate pagination info
+        total_pages = (total_customers + page_size - 1) // page_size if total_customers > 0 else 1
+        has_prev = page > 1
+        has_next = page < total_pages
+        
+        # Get recent info for each customer
+        customer_data = []
+        for customer in customers:
+            # Get last order info
+            last_order = db.query(models.Order).filter(
+                models.Order.customer_id == customer.id
+            ).order_by(models.Order.created_at.desc()).first()
+            
+            customer_data.append({
+                "customer": customer,
+                "last_order": last_order,
+                "group_name": customer.group.name if customer.group else "Unknown"
+            })
+        
+        return templates.TemplateResponse("admin/customers.html", {
+            "request": request,
+            "customers": customer_data,
+            "current_admin": current_admin,
+            "page": page,
+            "total_pages": total_pages,
+            "has_prev": has_prev,
+            "has_next": has_next,
+            "search": search or "",
+            "total_customers": total_customers
+        })
+        
+    except Exception as e:
+        logger.error(f"Error loading customers: {str(e)}")
+        return templates.TemplateResponse("admin/error.html", {
+            "request": request,
+            "error_message": f"Error loading customers: {str(e)}"
+        })

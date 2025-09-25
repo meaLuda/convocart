@@ -62,18 +62,14 @@ def run_migrations_online() -> None:
 
     """
     load_dotenv()
-    TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL")
-    TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
+    DATABASE_URL = os.getenv("DATABASE_URL")
 
-    # Use the same format as in database.py
-    db_url = f"sqlite+libsql://{TURSO_DATABASE_URL}?secure=true"
+    if not DATABASE_URL:
+        raise ValueError("DATABASE_URL environment variable is required")
 
     connectable = create_engine(
-        db_url,
+        DATABASE_URL,
         poolclass=pool.NullPool,
-        connect_args={
-            "auth_token": TURSO_AUTH_TOKEN
-        }
     )
 
     with connectable.connect() as connection:

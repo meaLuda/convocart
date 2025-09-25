@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Page Not Found | ConvoCart{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="error-card">
+        <!-- Error Icon -->
+        <div class="flex justify-center mb-6">
+            <div class="w-24 h-24 bg-gradient-to-br from-secondary-100 to-secondary-200 rounded-full flex items-center justify-center">
+                <i class="fas fa-search text-4xl text-secondary-500"></i>
+            </div>
+        </div>
+        
+        <!-- Error Code -->
+        <h1 class="error-code">404</h1>
+        
+        <!-- Error Title -->
+        <h2 class="error-title">Page Not Found</h2>
+        
+        <!-- Error Description -->
+        <p class="error-description">
+            The page you're looking for doesn't exist or has been moved.
+        </p>
+        
+        <!-- Action Buttons -->
+        <div class="space-y-3">
+            <button onclick="window.history.back()" 
+                class="btn btn-primary w-full">
+                <i class="fas fa-arrow-left mr-2"></i>
+                Go Back
+            </button>
+            
+            <a href="/admin/dashboard" 
+                class="btn btn-outline w-full">
+                <i class="fas fa-home mr-2"></i>
+                Return to Dashboard
+            </a>
+        </div>
+        
+        <!-- Help Links -->
+        <div class="mt-8 pt-6 border-t border-gray-200">
+            <p class="text-sm text-gray-500 mb-3">Need help?</p>
+            <div class="flex justify-center space-x-4 text-sm">
+                <a href="/admin/dashboard" class="text-primary-600 hover:text-primary-700">
+                    <i class="fas fa-question-circle mr-1"></i>
+                    Dashboard
+                </a>
+                <a href="/admin/orders" class="text-primary-600 hover:text-primary-700">
+                    <i class="fas fa-shopping-cart mr-1"></i>
+                    Orders
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Auto-redirect after 10 seconds
+setTimeout(function() {
+    if (confirm('Would you like to return to the dashboard?')) {
+        window.location.href = '/admin/dashboard';
+    }
+}, 10000);
+</script>
+{% endblock %}

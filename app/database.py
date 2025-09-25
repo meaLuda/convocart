@@ -1,7 +1,6 @@
 from sqlalchemy import event, text, create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
-import sqlalchemy_libsql.libsql  # noqa: F401
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 from app.config import get_settings
@@ -11,18 +10,21 @@ settings = get_settings()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Construct the URL without auth parameters
-SQLALCHEMY_DATABASE_URL = f"sqlite+libsql://{settings.turso_database_url}?secure=true"
+# PostgreSQL database URL
+SQLALCHEMY_DATABASE_URL = settings.database_url
 
-# Create synchronous engine with auth token in connect_args and connection resilience
-# SQLite/libsql doesn't support all PostgreSQL pooling options
+# Create PostgreSQL engine with connection pooling
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, 
+    SQLALCHEMY_DATABASE_URL,
     echo=False,  # Disable SQL query logging to reduce noise
     pool_pre_ping=True,  # Verify connections before using them
     pool_recycle=1800,   # Recycle connections every 30 minutes
+    pool_size=5,         # Connection pool size
+    max_overflow=10,     # Maximum overflow connections
+    pool_timeout=30,     # Timeout for getting connection from pool
     connect_args={
-        "auth_token": settings.turso_auth_token
+        "connect_timeout": 10,  # Connection timeout
+        "application_name": "OrderBot"
     }
 )
 
@@ -65,7 +67,7 @@ def get_db():
                     pass
             raise
         finally:
-            if db and retry_count < max_retries:
+            if db:
                 try:
                     db.close()
                 except Exception as e:

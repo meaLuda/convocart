@@ -52,33 +52,71 @@ fresh:
 logs:
 	docker logs -f $(CONTAINER_NAME)
 
-# Alembic Migrations
-alembic_init:
-	$(PYTHON) -m alembic init alembic
+# Database & Migrations (PostgreSQL)
+db_setup:
+	@echo "Setting up PostgreSQL database..."
+	@echo "Make sure DATABASE_URL is set in your .env file"
+	uv run ./scripts/setup_postgresql.py
 
-alembic_revision:
-	$(PYTHON) -m alembic revision --autogenerate -m "New migration"
+db_revision:
+	$(PYTHON) run alembic revision --autogenerate -m "$(if $(m),$(m),New migration)"
 
-alembic_upgrade:
-	$(PYTHON) -m alembic upgrade head
+db_upgrade:
+	$(PYTHON) run alembic upgrade head
 
-alembic_downgrade:
-	$(PYTHON) -m alembic downgrade -1
+db_downgrade:
+	$(PYTHON) run alembic downgrade -1
+
+db_current:
+	$(PYTHON) run alembic current
+
+db_history:
+	$(PYTHON) run alembic history
+
+db_reset:
+	@echo "⚠️  This will delete all migration files and reset the database schema!"
+	@echo "Are you sure? (y/N): " && read answer && [ "$$answer" = "y" ]
+	rm -rf alembic/versions/*.py
+	@echo "Migration files deleted. Run 'make db_setup' to create fresh migrations."
+
+# Development Commands
+dev_install:
+	uv sync
+	@echo "Dependencies installed. Copy .env.example to .env and configure DATABASE_URL"
+
+dev_check:
+	@echo "Checking environment..."
+	@if [ -f .env ]; then echo "✅ .env file exists"; else echo "❌ .env file missing - copy from .env.example"; fi
+	@if grep -q "DATABASE_URL=" .env 2>/dev/null; then echo "✅ DATABASE_URL configured"; else echo "❌ DATABASE_URL not set in .env"; fi
 
 # Help
 help:
 	@echo "Available commands:"
+	@echo ""
+	@echo "🚀 Development:"
+	@echo "  make dev_install       - Install dependencies with uv"
+	@echo "  make dev_check         - Check environment configuration"
+	@echo "  make run_app           - Start the application"
+	@echo ""
+	@echo "🗄️  Database (PostgreSQL):"
+	@echo "  make db_setup          - Set up PostgreSQL database (interactive)"
+	@echo "  make db_revision m='message' - Create new migration"
+	@echo "  make db_upgrade        - Apply all pending migrations"
+	@echo "  make db_downgrade      - Revert the last migration"
+	@echo "  make db_current        - Show current migration"
+	@echo "  make db_history        - Show migration history"
+	@echo "  make db_reset          - Reset all migrations (⚠️  destructive)"
+	@echo ""
+	@echo "🎨 Frontend:"
 	@echo "  make tw_watch          - Watch for Tailwind CSS changes"
+	@echo "  make tw_minify         - Build minified CSS"
+	@echo ""
+	@echo "🐳 Docker:"
 	@echo "  make build             - Build Docker image"
-	@echo "  make start             - Start container with volume mounting"
-	@echo "  make stop              - Stop and remove the container"
-	@echo "  make restart           - Restart the container (for code changes)"
-	@echo "  make shell             - Enter container shell"
-	@echo "  make fresh             - Complete rebuild (remove and recreate everything)"
+	@echo "  make start             - Start container"
+	@echo "  make stop              - Stop and remove container"
+	@echo "  make restart           - Restart container"
+	@echo "  make fresh             - Complete rebuild"
 	@echo "  make logs              - View container logs"
-	@echo "  make alembic_init      - Initialize Alembic (run once)"
-	@echo "  make alembic_revision  - Create a new migration"
-	@echo "  make alembic_upgrade   - Apply all pending migrations"
-	@echo "  make alembic_downgrade - Revert the last migration"
 
-.PHONY: tw_watch build start stop restart shell fresh logs alembic_init alembic_revision alembic_upgrade alembic_downgrade help
+.PHONY: tw_watch tw_minify run_app build start stop restart shell fresh logs dev_install dev_check db_setup db_revision db_upgrade db_downgrade db_current db_history db_reset help

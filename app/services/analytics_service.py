@@ -16,6 +16,7 @@ from app.models import (
     Customer, CustomerAnalytics, Order, OrderItem, Product, ProductReview,
     Group, BusinessType, ConversationSession, ConversationState
 )
+from app.services.cache_service import get_cache_service, cache_analytics, cache_database_query
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,13 @@ class AnalyticsService:
     
     def __init__(self, db: Session):
         self.db = db
+        self.cache = get_cache_service()
     
     # ==========================================
     # CUSTOMER BEHAVIOR ANALYTICS
     # ==========================================
     
+    @cache_analytics(expire_hours=2)
     def analyze_customer_behavior(self, customer_id: int, update_analytics: bool = True) -> Dict[str, Any]:
         """
         Comprehensive customer behavior analysis
@@ -129,7 +132,7 @@ class AnalyticsService:
             
             # Combine and rank recommendations
             all_recommendations = self._combine_recommendations(
-                collaborative_recs, content_based_recs, trending_recs, limit
+                collaborative_recs, content_based_recs, trending_recs, limit=limit
             )
             
             return all_recommendations[:limit]
@@ -790,6 +793,20 @@ class AnalyticsService:
         """Calculate preference score for a category"""
         # Weighted combination of quantity, spending, and frequency
         return (quantity * 0.3 + spent * 0.4 + frequency * 0.3)
+    
+    def _infer_communication_style(self, sessions: List) -> str:
+        """Infer customer's communication style from conversation sessions"""
+        if not sessions:
+            return "unknown"
+        
+        # Simple heuristic based on session length and interaction patterns
+        total_sessions = len(sessions)
+        if total_sessions >= 10:
+            return "frequent_communicator"
+        elif total_sessions >= 5:
+            return "regular_communicator"
+        else:
+            return "occasional_communicator"
     
     def _get_popular_products(self, group_id: Optional[int] = None, limit: int = 5) -> List[Dict[str, Any]]:
         """Get popular products based on order frequency and quantity"""

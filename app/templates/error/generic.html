@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}{{ error_title or "Error" }} | ConvoCart{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="error-card">
+        <!-- Error Icon -->
+        <div class="flex justify-center mb-6">
+            <div class="w-24 h-24 bg-gradient-to-br from-secondary-100 to-secondary-200 rounded-full flex items-center justify-center">
+                <i class="fas {{ error_icon or 'fa-exclamation-circle' }} text-4xl text-secondary-500"></i>
+            </div>
+        </div>
+        
+        <!-- Error Code -->
+        <h1 class="error-code">{{ error_code or "Error" }}</h1>
+        
+        <!-- Error Title -->
+        <h2 class="error-title">{{ error_title or "Something went wrong" }}</h2>
+        
+        <!-- Error Description -->
+        <p class="error-description">
+            {{ error_message or "An unexpected error occurred. Please try again." }}
+        </p>
+        
+        <!-- Additional Details -->
+        {% if error_details %}
+        <div class="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200 text-left">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2">Details:</h4>
+            <p class="text-sm text-gray-600">{{ error_details }}</p>
+        </div>
+        {% endif %}
+        
+        <!-- Action Buttons -->
+        <div class="space-y-3 mt-6">
+            {% if show_retry %}
+            <button onclick="window.location.reload()" 
+                class="btn btn-primary w-full">
+                <i class="fas fa-redo mr-2"></i>
+                Try Again
+            </button>
+            {% endif %}
+            
+            <button onclick="window.history.back()" 
+                class="btn btn-outline w-full">
+                <i class="fas fa-arrow-left mr-2"></i>
+                Go Back
+            </button>
+            
+            <a href="/admin/dashboard" 
+                class="btn btn-ghost w-full">
+                <i class="fas fa-home mr-2"></i>
+                Return to Dashboard
+            </a>
+        </div>
+        
+        <!-- Support Information -->
+        <div class="mt-8 pt-6 border-t border-gray-200">
+            <p class="text-sm text-gray-500 mb-3">Error Information:</p>
+            <div class="text-sm text-gray-600">
+                {% if error_time %}
+                <p class="mb-2">
+                    <i class="fas fa-clock mr-2"></i>
+                    Time: {{ error_time }}
+                </p>
+                {% endif %}
+                {% if error_id %}
+                <p class="mb-2">
+                    <i class="fas fa-hashtag mr-2"></i>
+                    ID: {{ error_id }}
+                </p>
+                {% endif %}
+                {% if request and request.url %}
+                <p>
+                    <i class="fas fa-link mr-2"></i>
+                    URL: {{ request.url }}
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Log error for debugging
+console.error('Generic Error:', {
+    code: '{{ error_code }}',
+    title: '{{ error_title }}',
+    message: '{{ error_message }}',
+    time: '{{ error_time }}',
+    id: '{{ error_id }}'
+});
+
+// Show toast notification
+setTimeout(function() {
+    showToast('{{ error_message or "An error occurred. Please try again." }}', 'error');
+}, 1000);
+</script>
+{% endblock %}

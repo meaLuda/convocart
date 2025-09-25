@@ -34,9 +34,8 @@ class Settings(BaseSettings):
     whatsapp_business_id: str = Field("", env="WHATSAPP_BUSINESS_ID")
     whatsapp_api_token: str = Field("", env="WHATSAPP_API_TOKEN")
 
-    # Turso Database settings
-    turso_auth_token: str = Field(..., env="TURSO_AUTH_TOKEN")
-    turso_database_url: str = Field(..., env="TURSO_DATABASE_URL")
+    # Database settings
+    database_url: str = Field(..., env="DATABASE_URL")
 
     # Admin credentials
     admin_username: str = Field("ConvoCartAdmin", env="ADMIN_USERNAME")

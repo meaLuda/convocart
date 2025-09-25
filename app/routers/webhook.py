@@ -192,6 +192,48 @@ async def handle_customer_message_with_ai_context(customer, event_data, db, curr
     logger.info(f"AI PROCESSING: state={current_state}, customer_id={customer.id}, group_id={group_id}")
     logger.info(f"Processing message: type={message_type}, content_preview={message[:50]}...")
     
+    # Handle media attachments if present
+    media_info = None
+    if event_data.get("MessageType") in ["image", "audio", "video", "document"]:
+        logger.info(f"Processing media message: {event_data.get('MessageType')}")
+        try:
+            # Process and download media
+            media_info = whatsapp_service.process_media_message(event_data)
+            
+            if media_info:
+                # Save media attachment to database
+                from app.models import MediaAttachment
+                media_attachment = MediaAttachment(
+                    media_sid=media_info["media_sid"],
+                    message_sid=media_info.get("message_sid"),
+                    customer_id=customer.id,
+                    group_id=group_id,
+                    filename=media_info["filename"],
+                    file_path=media_info["file_path"],
+                    content_type=media_info["content_type"],
+                    file_size=media_info["file_size"],
+                    media_type=media_info["message_type"],
+                    caption=media_info.get("caption", ""),
+                    from_number=media_info.get("from_number"),
+                    download_timestamp=datetime.utcnow(),
+                    media_metadata=media_info
+                )
+                
+                db.add(media_attachment)
+                db.commit()
+                
+                logger.info(f"Saved media attachment: {media_info['filename']} ({media_info['file_size']} bytes)")
+                
+                # Add media context to message for AI processing
+                media_context = f"\n[User sent {media_info['message_type']}: {media_info['filename']}]"
+                if media_info.get("caption"):
+                    media_context += f"\nCaption: {media_info['caption']}"
+                message = (message + media_context).strip()
+                
+        except Exception as e:
+            logger.error(f"Error processing media attachment: {str(e)}")
+            # Continue with text processing even if media fails
+            
     try:
         # Initialize AI agent
         ai_agent = get_ai_agent(db)

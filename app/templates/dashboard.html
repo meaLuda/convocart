@@ -5,24 +5,53 @@
 {% block page_title %}Dashboard{% endblock %}
 
 {% block content %}
-    <!-- Welcome section with user info -->
-    <div class="card mb-6">
-        <div class="flex flex-col md:flex-row items-start md:items-center justify-between">
-            <div>
-                <h1 class="text-2xl font-bold text-gray-800">Welcome, {{ admin.full_name or admin.username }}</h1>
-                <p class="text-gray-600">
-                    {{ admin.role.value|replace('_', ' ')|title }} Account • 
-                    {% if admin.last_login %}
-                    Last login: {{ admin.last_login.strftime('%Y-%m-%d %H:%M') }}
-                    {% else %}
-                    First login
-                    {% endif %}
-                </p>
-            </div>
-            <div class="mt-4 md:mt-0 flex items-center">
-                <div class="h-12 w-12 rounded-full bg-primary-100 flex items-center justify-center text-primary-600 font-bold text-xl">
-                    {{ admin.username[:1]|upper }}
+    <!-- Enhanced Welcome Banner -->
+    <div class="relative bg-gradient-to-br from-primary-500 via-primary-600 to-secondary-600 rounded-3xl p-8 mb-8 text-white overflow-hidden">
+        <!-- Background Pattern -->
+        <div class="absolute inset-0 opacity-10">
+            <div class="absolute top-0 right-0 w-96 h-96 bg-white rounded-full transform translate-x-32 -translate-y-32"></div>
+            <div class="absolute bottom-0 left-0 w-64 h-64 bg-white rounded-full transform -translate-x-16 translate-y-16"></div>
+        </div>
+        
+        <div class="relative flex flex-col lg:flex-row items-start lg:items-center justify-between">
+            <div class="flex-1">
+                <div class="flex items-center mb-3">
+                    <div class="w-16 h-16 bg-white bg-opacity-20 rounded-2xl flex items-center justify-center text-2xl font-bold mr-4">
+                        {{ admin.username[:1]|upper }}
+                    </div>
+                    <div>
+                        <h1 class="text-3xl font-bold">Welcome back, {{ admin.full_name or admin.username }}!</h1>
+                        <p class="text-primary-100 mt-1">
+                            {{ admin.role.value|replace('_', ' ')|title }} Account
+                        </p>
+                    </div>
                 </div>
+                
+                <div class="flex flex-wrap items-center gap-4 text-sm text-primary-100">
+                    <div class="flex items-center">
+                        <i class="fas fa-clock mr-2"></i>
+                        {% if admin.last_login %}
+                        Last login: {{ admin.last_login.strftime('%B %d, %Y at %H:%M') }}
+                        {% else %}
+                        First time login - Welcome!
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center">
+                        <i class="fas fa-calendar mr-2"></i>
+                        Today: {{ moment().strftime('%B %d, %Y') if moment else 'Dashboard Active' }}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-6 lg:mt-0 flex flex-col sm:flex-row gap-3">
+                <a href="/admin/groups/new" class="btn bg-white text-primary-600 hover:bg-primary-50">
+                    <i class="fas fa-plus mr-2"></i>
+                    New Group
+                </a>
+                <a href="/admin/orders" class="btn bg-primary-700 hover:bg-primary-800 text-white">
+                    <i class="fas fa-shopping-cart mr-2"></i>
+                    View Orders
+                </a>
             </div>
         </div>
     </div>
@@ -35,93 +64,113 @@
         {% include 'partials/dashboard_stats.html' %}
     </div>
 
-    <!-- Recent orders -->
+    <!-- Enhanced Recent Orders Section -->
     <div class="card">
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-xl font-bold text-gray-800">Recent Orders</h2>
-            <a href="/admin/orders" class="text-primary-600 hover:text-primary-700 font-medium flex items-center">
-                <span>View all</span>
-                <i class="fas fa-arrow-right ml-1"></i>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-6">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-1">Recent Orders</h2>
+                <p class="text-gray-500 text-sm">Latest customer orders and their status</p>
+            </div>
+            <a href="/admin/orders" class="btn btn-outline mt-4 sm:mt-0">
+                <span>View All Orders</span>
+                <i class="fas fa-arrow-right ml-2"></i>
             </a>
         </div>
 
         {% if orders %}
-        <div class="overflow-x-auto">
-            <table class="w-full border-collapse">
+        <div class="table-container">
+            <table class="table">
                 <thead>
-                    <tr class="bg-gray-100">
-                        <th class="border p-2 text-left">Order #</th>
-                        <th class="border p-2 text-left">Customer</th>
+                    <tr>
+                        <th>Order Details</th>
+                        <th>Customer</th>
                         {% if admin.role.value == 'super_admin' %}
-                        <th class="border p-2 text-left">Group</th>
+                        <th>Group</th>
                         {% endif %}
-                        <th class="border p-2 text-left">Status</th>
-                        <th class="border p-2 text-left">Payment</th>
-                        <th class="border p-2 text-left">Amount</th>
-                        <th class="border p-2 text-left">Date</th>
-                        <th class="border p-2 text-left">Actions</th>
+                        <th>Status</th>
+                        <th>Payment</th>
+                        <th>Amount</th>
+                        <th>Date</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for order in orders %}
-                    <tr class="hover:bg-gray-50">
-                        <td class="border p-2">{{ order.order_number }}</td>
-                        <td class="border p-2">
+                    <tr class="table-row-hover">
+                        <td>
+                            <div class="font-semibold text-gray-900">{{ order.order_number }}</div>
+                            {% if order.items %}
+                            <div class="text-xs text-gray-500 mt-1">
+                                {{ order.items|length }} item{{ 's' if order.items|length != 1 else '' }}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td>
                             {% if order.customer %}
-                                {{ order.customer.name }}<br>
-                                <span class="text-xs text-gray-600">{{ order.customer.phone_number }}</span>
+                            <div class="flex items-center">
+                                <div class="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center text-primary-600 text-sm font-medium mr-3">
+                                    {{ order.customer.name[:1]|upper if order.customer.name else 'C' }}
+                                </div>
+                                <div>
+                                    <div class="font-medium text-gray-900">{{ order.customer.name or 'Unknown' }}</div>
+                                    <div class="text-xs text-gray-500">{{ order.customer.phone_number }}</div>
+                                </div>
+                            </div>
                             {% else %}
-                                Customer #{{ order.customer_id }}
+                            <span class="text-gray-500">Customer #{{ order.customer_id }}</span>
                             {% endif %}
                         </td>
                         {% if admin.role.value == 'super_admin' %}
-                        <td class="border p-2">
+                        <td>
                             {% if order.group %}
-                                {{ order.group.name }}
+                            <div class="font-medium text-gray-700">{{ order.group.name }}</div>
+                            <div class="text-xs text-gray-500">{{ order.group.business_type.value|replace('_', ' ')|title if order.group.business_type else '' }}</div>
                             {% else %}
-                                Group #{{ order.group_id }}
+                            <span class="text-gray-500">Group #{{ order.group_id }}</span>
                             {% endif %}
                         </td>
                         {% endif %}
-                        <td class="border p-2">
-                            <span class="px-2 py-1 rounded-full text-xs 
-                                {% if order.status.value == 'pending' %}bg-yellow-100 text-yellow-800
-                                {% elif order.status.value == 'processing' %}bg-blue-100 text-blue-800
-                                {% elif order.status.value == 'completed' %}bg-green-100 text-green-800
-                                {% elif order.status.value == 'cancelled' %}bg-red-100 text-red-800
-                                {% elif order.status.value == 'refunded' %}bg-purple-100 text-purple-800
+                        <td>
+                            <span class="badge
+                                {% if order.status.value == 'pending' %}badge-pending
+                                {% elif order.status.value == 'processing' %}badge-processing
+                                {% elif order.status.value == 'completed' %}badge-completed
+                                {% elif order.status.value == 'cancelled' %}badge-cancelled
+                                {% elif order.status.value == 'refunded' %}badge-cancelled
                                 {% endif %}">
-                                {{ order.status.value }}
+                                <i class="fas 
+                                    {% if order.status.value == 'pending' %}fa-clock
+                                    {% elif order.status.value == 'processing' %}fa-cog fa-spin
+                                    {% elif order.status.value == 'completed' %}fa-check
+                                    {% elif order.status.value == 'cancelled' %}fa-times
+                                    {% elif order.status.value == 'refunded' %}fa-undo
+                                    {% endif %} mr-1"></i>
+                                {{ order.status.value|title }}
                             </span>
                         </td>
-                        <td class="border p-2">
+                        <td>
                             {% if order.payment_method %}
-                                <span class="text-sm">
-                                    {{ order.payment_method.value|replace('_', ' ')|title }}
-                                    <span class="ml-1 px-1 py-0 text-xs rounded-full 
-                                        {% if order.payment_status.value == 'paid' %}bg-blue-100 text-blue-800
-                                        {% elif order.payment_status.value == 'verified' %}bg-green-100 text-green-800
-                                        {% elif order.payment_status.value == 'unpaid' %}bg-yellow-100 text-yellow-800
-                                        {% elif order.payment_status.value == 'failed' %}bg-red-100 text-red-800
-                                        {% elif order.payment_status.value == 'refunded' %}bg-purple-100 text-purple-800
-                                        {% endif %}">
-                                        {{ order.payment_status.value }}
-                                    </span>
-                                </span>
-                                {% if order.payment_ref %}
-                                <br><span class="text-xs text-gray-600">Ref: {{ order.payment_ref }}</span>
-                                {% endif %}
+                            <div class="text-sm font-medium text-gray-900">{{ order.payment_method.value|replace('_', ' ')|title }}</div>
+                            <span class="badge badge-{{ 'completed' if order.payment_status.value == 'verified' else 'pending' if order.payment_status.value in ['paid', 'unpaid'] else 'cancelled' }}">
+                                {{ order.payment_status.value|title }}
+                            </span>
+                            {% if order.payment_ref %}
+                            <div class="text-xs text-gray-500 mt-1">Ref: {{ order.payment_ref }}</div>
+                            {% endif %}
                             {% else %}
-                                <span class="text-xs text-gray-500">Not specified</span>
+                            <span class="text-gray-400 text-sm">Not specified</span>
                             {% endif %}
                         </td>
-                        <td class="border p-2">Ksh {{ "%.2f"|format(order.total_amount) }}</td>
-                        <td class="border p-2" title="{{ order.created_at }}">
-                            {{ order.created_at.strftime('%Y-%m-%d %H:%M') }}
+                        <td>
+                            <div class="font-semibold text-gray-900">Ksh {{ "%.2f"|format(order.total_amount) }}</div>
                         </td>
-                        <td class="border p-2">
-                            <a href="/admin/orders?id={{ order.id }}" class="text-blue-600 hover:text-blue-800">
-                                View
+                        <td>
+                            <div class="text-sm text-gray-900">{{ order.created_at.strftime('%b %d') }}</div>
+                            <div class="text-xs text-gray-500">{{ order.created_at.strftime('%H:%M') }}</div>
+                        </td>
+                        <td>
+                            <a href="/admin/orders?id={{ order.id }}" class="btn btn-sm btn-ghost">
+                                <i class="fas fa-eye"></i>
                             </a>
                         </td>
                     </tr>
@@ -130,39 +179,137 @@
             </table>
         </div>
         {% else %}
-        <div class="text-center py-8">
-            <p class="text-gray-500 italic">No orders found.</p>
+        <div class="text-center py-12">
+            <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-shopping-cart text-gray-400 text-xl"></i>
+            </div>
+            <h3 class="font-medium text-gray-900 mb-2">No orders yet</h3>
+            <p class="text-gray-500 text-sm mb-6">Orders will appear here once customers start placing them.</p>
+            <a href="/admin/groups/link-generator" class="btn btn-primary">
+                <i class="fas fa-link mr-2"></i>
+                Generate WhatsApp Links
+            </a>
         </div>
         {% endif %}
     </div>
     {% if admin.role.value == 'super_admin' %}
-    <!-- Quick links section -->
+    <!-- Enhanced Quick Actions Section -->
     <div class="mt-8">
-        <h2 class="text-xl font-bold text-gray-800 mb-4">Quick Actions</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <a href="/admin/groups/link-generator" class="card bg-white p-5 flex flex-col items-center justify-center hover:bg-gray-50 transition-colors">
-                <div class="rounded-full bg-purple-100 p-4 mb-3">
-                    <i class="fas fa-link text-purple-600 text-xl"></i>
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">Quick Actions</h2>
+                <p class="text-gray-500 text-sm">Common tasks and shortcuts</p>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Generate Links Card -->
+            <a href="/admin/groups/link-generator" class="card-interactive group">
+                <div class="flex items-center mb-4">
+                    <div class="stat-icon bg-gradient-to-r from-accent-500 to-accent-600 mr-4">
+                        <i class="fas fa-link"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-gray-800 group-hover:text-accent-600 transition-colors">WhatsApp Links</h3>
+                        <p class="text-sm text-gray-500">Generate sharing links</p>
+                    </div>
                 </div>
-                <h3 class="font-bold text-gray-800">Generate WhatsApp Links</h3>
-                <p class="text-sm text-gray-500 text-center mt-1">Create sharing links for your customer groups</p>
+                <p class="text-sm text-gray-600 mb-3">Create custom WhatsApp links for your customer groups to start conversations instantly.</p>
+                <div class="flex items-center text-accent-600 text-sm font-medium">
+                    <span>Generate Now</span>
+                    <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                </div>
             </a>
             
-            <a href="/admin/groups/new" class="card bg-white p-5 flex flex-col items-center justify-center hover:bg-gray-50 transition-colors">
-                <div class="rounded-full bg-green-100 p-4 mb-3">
-                    <i class="fas fa-users text-green-600 text-xl"></i>
+            <!-- Create Group Card -->
+            <a href="/admin/groups/new" class="card-interactive group">
+                <div class="flex items-center mb-4">
+                    <div class="stat-icon stat-icon-success mr-4">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-gray-800 group-hover:text-success-600 transition-colors">New Group</h3>
+                        <p class="text-sm text-gray-500">Set up customer groups</p>
+                    </div>
                 </div>
-                <h3 class="font-bold text-gray-800">Create New Group</h3>
-                <p class="text-sm text-gray-500 text-center mt-1">Set up a new customer group</p>
+                <p class="text-sm text-gray-600 mb-3">Create a new customer group with products, pricing, and automated responses.</p>
+                <div class="flex items-center text-success-600 text-sm font-medium">
+                    <span>Create Group</span>
+                    <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                </div>
             </a>
             
-            <a href="/admin/settings" class="card bg-white p-5 flex flex-col items-center justify-center hover:bg-gray-50 transition-colors">
-                <div class="rounded-full bg-blue-100 p-4 mb-3">
-                    <i class="fas fa-cog text-blue-600 text-xl"></i>
+            <!-- Analytics Card -->
+            <a href="/admin/api-usage" class="card-interactive group">
+                <div class="flex items-center mb-4">
+                    <div class="stat-icon stat-icon-warning mr-4">
+                        <i class="fas fa-chart-bar"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-gray-800 group-hover:text-warning-600 transition-colors">Analytics</h3>
+                        <p class="text-sm text-gray-500">View usage statistics</p>
+                    </div>
                 </div>
-                <h3 class="font-bold text-gray-800">System Settings</h3>
-                <p class="text-sm text-gray-500 text-center mt-1">Configure WhatsApp and system settings</p>
+                <p class="text-sm text-gray-600 mb-3">Monitor API usage, conversation patterns, and system performance metrics.</p>
+                <div class="flex items-center text-warning-600 text-sm font-medium">
+                    <span>View Analytics</span>
+                    <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                </div>
             </a>
+            
+            <!-- Settings Card -->
+            <a href="/admin/settings" class="card-interactive group">
+                <div class="flex items-center mb-4">
+                    <div class="stat-icon stat-icon-secondary mr-4">
+                        <i class="fas fa-cog"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-gray-800 group-hover:text-secondary-600 transition-colors">Settings</h3>
+                        <p class="text-sm text-gray-500">System configuration</p>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-600 mb-3">Configure WhatsApp integration, AI settings, and global system preferences.</p>
+                <div class="flex items-center text-secondary-600 text-sm font-medium">
+                    <span>Open Settings</span>
+                    <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                </div>
+            </a>
+            
+            <!-- Users Management Card -->
+            <a href="/admin/users" class="card-interactive group">
+                <div class="flex items-center mb-4">
+                    <div class="stat-icon stat-icon-primary mr-4">
+                        <i class="fas fa-user-cog"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-gray-800 group-hover:text-primary-600 transition-colors">User Management</h3>
+                        <p class="text-sm text-gray-500">Manage admin users</p>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-600 mb-3">Add, edit, or remove admin users and manage their permissions and access levels.</p>
+                <div class="flex items-center text-primary-600 text-sm font-medium">
+                    <span>Manage Users</span>
+                    <i class="fas fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                </div>
+            </a>
+            
+            <!-- Documentation Card -->
+            <div class="card-interactive group cursor-default">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-gradient-to-r from-gray-400 to-gray-500 rounded-xl flex items-center justify-center text-white text-xl mr-4">
+                        <i class="fas fa-book"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-gray-800">Documentation</h3>
+                        <p class="text-sm text-gray-500">Help & guides</p>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-600 mb-3">Access comprehensive guides, API documentation, and troubleshooting resources.</p>
+                <div class="flex items-center text-gray-500 text-sm font-medium">
+                    <span>Coming Soon</span>
+                    <i class="fas fa-lock ml-2"></i>
+                </div>
+            </div>
         </div>
     </div>
     {% endif %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error | ConvoCart{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="error-card">
+        <!-- Error Icon -->
+        <div class="flex justify-center mb-6">
+            <div class="w-24 h-24 bg-gradient-to-br from-error-100 to-error-200 rounded-full flex items-center justify-center">
+                <i class="fas fa-exclamation-triangle text-4xl text-error-500"></i>
+            </div>
+        </div>
+        
+        <!-- Error Code -->
+        <h1 class="error-code">500</h1>
+        
+        <!-- Error Title -->
+        <h2 class="error-title">Server Error</h2>
+        
+        <!-- Error Description -->
+        <p class="error-description">
+            Something went wrong on our end. We're working to fix this issue.
+        </p>
+        
+        <!-- Technical Details (if available) -->
+        {% if error_details %}
+        <div class="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200 text-left">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2">Technical Details:</h4>
+            <code class="text-xs text-gray-600 break-all">{{ error_details }}</code>
+        </div>
+        {% endif %}
+        
+        <!-- Action Buttons -->
+        <div class="space-y-3 mt-6">
+            <button onclick="window.location.reload()" 
+                class="btn btn-primary w-full">
+                <i class="fas fa-redo mr-2"></i>
+                Try Again
+            </button>
+            
+            <button onclick="window.history.back()" 
+                class="btn btn-outline w-full">
+                <i class="fas fa-arrow-left mr-2"></i>
+                Go Back
+            </button>
+            
+            <a href="/admin/dashboard" 
+                class="btn btn-ghost w-full">
+                <i class="fas fa-home mr-2"></i>
+                Return to Dashboard
+            </a>
+        </div>
+        
+        <!-- Support Information -->
+        <div class="mt-8 pt-6 border-t border-gray-200">
+            <p class="text-sm text-gray-500 mb-3">If this problem persists:</p>
+            <div class="text-sm text-gray-600">
+                <p class="mb-2">
+                    <i class="fas fa-clock mr-2"></i>
+                    Error occurred at: {{ error_time or "Unknown" }}
+                </p>
+                <p class="mb-2">
+                    <i class="fas fa-hashtag mr-2"></i>
+                    Error ID: {{ error_id or "N/A" }}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Log error for debugging
+console.error('Server Error 500:', {
+    time: '{{ error_time }}',
+    id: '{{ error_id }}',
+    details: '{{ error_details }}'
+});
+
+// Show user-friendly message after delay
+setTimeout(function() {
+    showToast('We apologize for the inconvenience. Please try refreshing the page.', 'error');
+}, 2000);
+</script>
+{% endblock %}

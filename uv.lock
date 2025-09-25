@@ -292,13 +292,13 @@ dependencies = [
     { name = "alembic" },
     { name = "bcrypt" },
     { name = "fastapi" },
+    { name = "fastapi-csrf-protect" },
     { name = "google-generativeai" },
     { name = "jinja2" },
     { name = "langchain" },
     { name = "langchain-community" },
     { name = "langchain-google-genai" },
     { name = "langgraph" },
-    { name = "libsql" },
     { name = "openpyxl" },
     { name = "pandas" },
     { name = "passlib" },
@@ -311,7 +311,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "requests" },
     { name = "sqlalchemy" },
-    { name = "sqlalchemy-libsql" },
+    { name = "starlette-csrf" },
     { name = "transitions" },
     { name = "twilio" },
     { name = "typing-extensions" },
@@ -325,13 +325,13 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.15.2" },
     { name = "bcrypt", specifier = ">=4.3.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
+    { name = "fastapi-csrf-protect", specifier = ">=1.0.7" },
     { name = "google-generativeai", specifier = ">=0.8.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "langchain", specifier = ">=0.3.0" },
     { name = "langchain-community", specifier = ">=0.3.0" },
     { name = "langchain-google-genai", specifier = ">=2.0.0" },
     { name = "langgraph", specifier = ">=0.2.0" },
-    { name = "libsql", specifier = ">=0.1.8" },
     { name = "openpyxl", specifier = ">=3.1.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "passlib", specifier = ">=1.7.4" },
@@ -344,7 +344,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "sqlalchemy", specifier = ">=2.0.40" },
-    { name = "sqlalchemy-libsql", specifier = ">=0.2.0" },
+    { name = "starlette-csrf", specifier = ">=3.0.0" },
     { name = "transitions", specifier = ">=0.9.3" },
     { name = "twilio", specifier = ">=9.0.0" },
     { name = "typing-extensions", specifier = ">=4.13.2" },
@@ -397,6 +397,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/78/d7/6c8b3bfe33eeffa208183ec037fee0cce9f7f024089ab1c5d12ef04bd27c/fastapi-0.116.1.tar.gz", hash = "sha256:ed52cbf946abfd70c5a0dccb24673f0670deeb517a88b3544d03c2a6bf283143", size = 296485, upload-time = "2025-07-11T16:22:32.057Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/47/d63c60f59a59467fda0f93f46335c9d18526d7071f025cb5b89d5353ea42/fastapi-0.116.1-py3-none-any.whl", hash = "sha256:c46ac7c312df840f0c9e220f7964bada936781bc4e2e6eb71f1c4d7553786565", size = 95631, upload-time = "2025-07-11T16:22:30.485Z" },
+]
+
+[[package]]
+name = "fastapi-csrf-protect"
+version = "1.0.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "itsdangerous" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "starlette" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/1a/fedbcb4aba24ccc8abfb5d30e08112073c6a9f20b8d88adbdd3051ceedac/fastapi_csrf_protect-1.0.7.tar.gz", hash = "sha256:888b15b232625aae5b997fbcf81ef45633a7694f0312a054f1eec6d132b295fb", size = 207326, upload-time = "2025-09-16T07:06:08.586Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/10/f248aab919678444723d557da918088e5c737b44e03e3aa4a0ad7afc7dae/fastapi_csrf_protect-1.0.7-py3-none-any.whl", hash = "sha256:ca3c5b50564af932ac4ed3d06caeed61bf16eed13a31cfe2bdfc3f7c1e8612a3", size = 18412, upload-time = "2025-09-16T07:06:05.926Z" },
 ]
 
 [[package]]
@@ -721,6 +736,15 @@ wheels = [
 ]
 
 [[package]]
+name = "itsdangerous"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/cb/8ac0172223afbccb63986cc25049b154ecfb5e85932587206f42317be31d/itsdangerous-2.2.0.tar.gz", hash = "sha256:e0050c0b7da1eea53ffaf149c0cfbb5c6e2e2b69c4bef22c81fa6eb73e5f6173", size = 54410, upload-time = "2024-04-16T21:28:15.614Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/96/92447566d16df59b2a776c0fb82dbc4d9e07cd95062562af01e408583fc4/itsdangerous-2.2.0-py3-none-any.whl", hash = "sha256:c6242fc49e35958c8b15141343aa660db5fc54d4f13a1db01a3f5891b98700ef", size = 16234, upload-time = "2024-04-16T21:28:14.499Z" },
+]
+
+[[package]]
 name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
@@ -911,37 +935,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0c/84/2f01d51a557d14a9a5590c32de5dde3b466b00a55521450c2c9e77ffa438/langsmith-0.4.25.tar.gz", hash = "sha256:56f0c45810384fba37582ca17fdbcf6ead51934d26d72672e5a810452c0d4ae3", size = 940274, upload-time = "2025-09-04T23:59:33.97Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a5/85/8a5ca8f6044bd74acd0d364878b459d84ec460cf40aec17ed9cd5716e908/langsmith-0.4.25-py3-none-any.whl", hash = "sha256:adb61784ff58e65f0290ba45770626219fb06a776e69fbcf98aec580478b4686", size = 379416, upload-time = "2025-09-04T23:59:31.72Z" },
-]
-
-[[package]]
-name = "libsql"
-version = "0.1.8"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/cb/9a/a1243db9b7ed51c491526e5a61b9d015fe272b9a6a7d9e346e38fdbbf983/libsql-0.1.8.tar.gz", hash = "sha256:a701c9b7e5ca0aeb92b718ee2d4892c31e91916ac4712db3cd0cdfbd99604f46", size = 33240, upload-time = "2025-07-29T10:38:07.433Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/ff/1b028873b1845d865e6926b5efa20244d55f039cbc35dbfc06b63fb154f7/libsql-0.1.8-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:bcd4097b507851d59530dd94daa6260350c1bcb829a0a35d4941042ef9081af5", size = 4970113, upload-time = "2025-07-29T10:37:47.1Z" },
-    { url = "https://files.pythonhosted.org/packages/45/b4/b0db473dd619e8442c926632ffc6c9049f2dc780f8a9987b99f2f99754b8/libsql-0.1.8-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:70484eab57e2c3c03057a06510fe0b62a636bc564e430008830f91fa3918a36b", size = 4726948, upload-time = "2025-07-29T10:37:48.707Z" },
-    { url = "https://files.pythonhosted.org/packages/13/a3/f0f32187ffd17cff9d19800f4311244c50cb60d6aa6ec655e5fd0f3d9016/libsql-0.1.8-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:74f3e999dd7a710dd5fc361f5d6299b7bbb1c62db9090ae7958d2d2cb49ff920", size = 5332778, upload-time = "2025-07-29T10:37:49.943Z" },
-    { url = "https://files.pythonhosted.org/packages/47/7f/7ef87249916d09460c9a20490d12d694396277907701d10582822797ae1c/libsql-0.1.8-cp312-cp312-win_amd64.whl", hash = "sha256:298ec12142b151d67cdd2a32b1a41473e0c6b20f6053d8c050174b16f373d458", size = 4246921, upload-time = "2025-07-29T10:37:51.554Z" },
-    { url = "https://files.pythonhosted.org/packages/bf/4e/b2c45188b4d0698bfca3e04a163da9983bfd46e103df7888c6b809f28f1c/libsql-0.1.8-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:31196711f07fcbbb6513beb8c274c529fe6cf9b5534a00f636d33d0262716146", size = 4969209, upload-time = "2025-07-29T10:37:52.876Z" },
-    { url = "https://files.pythonhosted.org/packages/08/de/47ff71f853d2eba26b6179202eebbe6fda518499418a0750f75f3d9009a6/libsql-0.1.8-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:ce2ebb0eae8cfeba3fe9966b20d6323f1549e3e6dab97c57ac4d70a3e75d2f92", size = 4725893, upload-time = "2025-07-29T10:37:54.454Z" },
-    { url = "https://files.pythonhosted.org/packages/76/87/b5651b6756926b1241ec56f94926f44d6fdb226fba10a542127e60fbf6ae/libsql-0.1.8-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:978f383780a5aa5caa83e59d8d5e129fa4d5ac70dca3674a71718f3f34dfc235", size = 5332428, upload-time = "2025-07-29T10:37:56.036Z" },
-    { url = "https://files.pythonhosted.org/packages/38/61/b84dd3fdc1513be38efd86c2594726f03110a1201716851fe5b77ab851f7/libsql-0.1.8-cp313-cp313-win_amd64.whl", hash = "sha256:87124d2ba6ab259e1d3e9ccde5f44165468bfd7cd2ce60df6854e1c37dd54b9b", size = 4246134, upload-time = "2025-07-29T10:37:57.665Z" },
-    { url = "https://files.pythonhosted.org/packages/ff/9e/3457d2b4a487133a5da67db6f172611640c110bfe75788e06068c6b23445/libsql-0.1.8-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c5aeeeee85fa2e72f6a695dc4ba96bcb7f865e979421a6bad1720eb721b55318", size = 5332880, upload-time = "2025-07-29T10:37:58.999Z" },
-]
-
-[[package]]
-name = "libsql-experimental"
-version = "0.0.55"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/53/14/d3eb81673e2096f38eb48f08e38b447f6f2fdc37a50bdb1810d4a225a7aa/libsql_experimental-0.0.55.tar.gz", hash = "sha256:34df13ad6da446e4ccede9b3803af40684da399c8f304848b54ea37e7111b249", size = 31954, upload-time = "2025-06-09T07:26:48.682Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/25/28/72e3bea3d9f28fbabcf11648d791f1f20fe42c288f58afdfbd978bd5500e/libsql_experimental-0.0.55-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:cffb9cd0c4bb39b37a5060ad492516c921ecbcc17ca7baa62c791d6753aa155b", size = 4881247, upload-time = "2025-06-09T07:26:32.335Z" },
-    { url = "https://files.pythonhosted.org/packages/17/ed/479f0908ccfdf1ccace798aac65480cb9514737fb37757daae0036ae6c7d/libsql_experimental-0.0.55-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:50312e354e739676885a9ea4000365538f3cec914d6b508a2206c3d33bea93a3", size = 4656349, upload-time = "2025-06-09T07:26:34.217Z" },
-    { url = "https://files.pythonhosted.org/packages/69/32/d84a47c7ab5332247be52065aaa6b22e4baae969b33af8daa99fb1a317bf/libsql_experimental-0.0.55-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:60d018dbad48f98ddee49d211618ab6309d4fa2a51beb8d9076de184d1cae9da", size = 5273739, upload-time = "2025-06-09T07:26:35.913Z" },
-    { url = "https://files.pythonhosted.org/packages/a0/9f/3589b9590ba948922bd200a02d754fa29e739da81a2953367e9283667a16/libsql_experimental-0.0.55-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:f3bfd7af2ca9d1ff8f8c7f7fce5f1a650bfe53c23b45658253480fe287283bae", size = 4881245, upload-time = "2025-06-09T07:26:37.382Z" },
-    { url = "https://files.pythonhosted.org/packages/37/cf/4aead944cb90f82ab1b61edc78dbe893420e8c4ceee19e1fdae775b1273d/libsql_experimental-0.0.55-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:b3476a78edb8f59aa6c571d6def1840fff8d263eb4bbc4b26b2afd7400cb9ba2", size = 4656348, upload-time = "2025-06-09T07:26:39.04Z" },
-    { url = "https://files.pythonhosted.org/packages/70/73/134dc2db0c3805f62953c85778bf93ac2f4a5ad81d49e592be990b012711/libsql_experimental-0.0.55-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7a5dd325f87425546e0a7f0d460d4b6e1852bc4d4194a7b5ad127614ef8b3b10", size = 5273740, upload-time = "2025-06-09T07:26:40.597Z" },
 ]
 
 [[package]]
@@ -1677,20 +1670,6 @@ wheels = [
 ]
 
 [[package]]
-name = "sqlalchemy-libsql"
-version = "0.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "greenlet" },
-    { name = "libsql-experimental" },
-    { name = "sqlalchemy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9c/3e/a628dad23a5310e00db674a5ddf92300acb4199a06ea82385cc48f6e9289/sqlalchemy_libsql-0.2.0.tar.gz", hash = "sha256:f6349c89ea10b941a9cd87ebb65330c660aff996c12d3da7e1696572c360edd1", size = 6405, upload-time = "2025-05-30T17:59:14.812Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a2/b9/7a3b645766a9f0f2ba27580d1ec6eb1ade754b30f0c88fcc6bee4cc2cb20/sqlalchemy_libsql-0.2.0-py3-none-any.whl", hash = "sha256:852a731c64f318581942c81a5e18c9752a553af25608abbff04cd54ae1f3d451", size = 5929, upload-time = "2025-05-30T17:59:13.913Z" },
-]
-
-[[package]]
 name = "starlette"
 version = "0.47.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1701,6 +1680,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/04/57/d062573f391d062710d4088fa1369428c38d51460ab6fedff920efef932e/starlette-0.47.2.tar.gz", hash = "sha256:6ae9aa5db235e4846decc1e7b79c4f346adf41e9777aebeb49dfd09bbd7023d8", size = 2583948, upload-time = "2025-07-20T17:31:58.522Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f7/1f/b876b1f83aef204198a42dc101613fefccb32258e5428b5f9259677864b4/starlette-0.47.2-py3-none-any.whl", hash = "sha256:c5847e96134e5c5371ee9fac6fdf1a67336d5815e09eb2a01fdb57a351ef915b", size = 72984, upload-time = "2025-07-20T17:31:56.738Z" },
+]
+
+[[package]]
+name = "starlette-csrf"
+version = "3.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "itsdangerous" },
+    { name = "starlette" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0f/7c/53c57b4cd76c9a4493a8525d34a76d7e4bbe0ff957de1c53f30241aa757a/starlette_csrf-3.0.0.tar.gz", hash = "sha256:7afaca8c72cc3c726e5942778af53454607ca3e653fd86cd75ee35d8cd1cfa77", size = 8371, upload-time = "2023-06-27T13:23:24.387Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b9/83/6641e4fdcf33b1cc614a74ecabe5835236a1b2564bf6735db7e35d788795/starlette_csrf-3.0.0-py3-none-any.whl", hash = "sha256:aac29b366e83621d3fc56be690866e16f3c56df91ab5e184b77950540a4e2761", size = 6170, upload-time = "2023-06-27T13:23:25.563Z" },
 ]
 
 [[package]]

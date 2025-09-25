@@ -21,10 +21,8 @@ logger = logging.getLogger(__name__)
 
 # HTMX-specific endpoints
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from fastapi import Request
-
-templates = Jinja2Templates(directory="app/templates")
+from app.templates_config import templates
 
 @router.get("/template/{business_type}")
 async def download_template(

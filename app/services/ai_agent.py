@@ -21,6 +21,9 @@ from app.services.analytics_service import get_analytics_service
 from app.services.business_config_service import get_business_config_service
 from app.services.rate_limiter import get_rate_limiter, rate_limited_api_call
 from app.services.api_monitor import get_api_monitor
+from app.services.enhanced_memory_service import get_enhanced_memory_service
+from app.services.cache_service import get_cache_service
+from app.utils.security import SecurityValidator, ai_circuit_breaker
 from sqlalchemy.orm import Session
 
 settings = get_settings()
@@ -61,6 +64,8 @@ class OrderBotAgent:
         self.inventory_service = get_inventory_service(db)
         self.analytics_service = get_analytics_service(db)
         self.business_config_service = get_business_config_service(db)
+        self.enhanced_memory = get_enhanced_memory_service(db)
+        self.cache_service = get_cache_service()
         self.rate_limiter = get_rate_limiter()
         self.api_monitor = get_api_monitor(db)
         
@@ -171,6 +176,9 @@ class OrderBotAgent:
             # Use invoke for synchronous call wrapped in rate limiter
             response = self.llm.invoke(final_messages)
             
+            # Record successful call for circuit breaker
+            ai_circuit_breaker.record_success()
+            
             # Check for empty response due to safety filtering
             if not response or not hasattr(response, 'content') or not response.content.strip():
                 logger.warning("Gemini returned empty response - likely due to safety filtering")
@@ -187,6 +195,9 @@ class OrderBotAgent:
         except Exception as e:
             success = False
             error_message = str(e)
+            
+            # Record failure for circuit breaker
+            ai_circuit_breaker.record_failure()
             
             if "429" in error_message:
                 error_code = "rate_limit_exceeded"
@@ -507,6 +518,35 @@ Consider the conversation context and respond with just the intent name."""
         else:
             return "general_details"
     
+    def _parse_json_from_response(self, response_content: str) -> Optional[Dict[str, Any]]:
+        """
+        Parse JSON from AI response, handling markdown code blocks and other formatting
+        """
+        try:
+            # First, try direct JSON parsing
+            return json.loads(response_content)
+        except json.JSONDecodeError:
+            try:
+                # Try to extract JSON from markdown code blocks
+                import re
+                
+                # Look for JSON within ```json ... ``` or ``` ... ``` blocks
+                json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', response_content, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(1).strip()
+                    return json.loads(json_str)
+                
+                # Look for any JSON-like structure
+                json_match = re.search(r'\{.*\}', response_content, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    return json.loads(json_str)
+                    
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse JSON from response: {response_content[:200]}...")
+                
+        return None
+
     async def _extract_order_details(self, message: str, state: AgentState) -> Optional[Dict[str, Any]]:
         """Extract structured order details from natural language"""
         try:
@@ -526,13 +566,10 @@ Customer message: {message}
             response = await self._rate_limited_llm_call([HumanMessage(content=prompt)], 
                                                         estimated_tokens=len(prompt))
             
-            # Try to parse JSON response
-            try:
-                order_data = json.loads(response.content)
-                if order_data and "items" in order_data and order_data["items"]:
-                    return order_data
-            except json.JSONDecodeError:
-                pass
+            # Parse JSON response with improved handling
+            order_data = self._parse_json_from_response(response.content)
+            if order_data and "items" in order_data and order_data["items"]:
+                return order_data
                 
             return None
             
@@ -634,15 +671,13 @@ Customer message: {message}
             response = await self._rate_limited_llm_call([HumanMessage(content=prompt)], 
                                                         estimated_tokens=len(prompt))
             
-            try:
-                order_data = json.loads(response.content)
-                if order_data and "items" in order_data and order_data["items"]:
-                    # Enhance with product matching
-                    enhanced_items = self._match_products_to_catalog(order_data["items"], state["group_id"])
-                    order_data["items"] = enhanced_items
-                    return order_data
-            except json.JSONDecodeError:
-                pass
+            # Parse JSON response with improved handling
+            order_data = self._parse_json_from_response(response.content)
+            if order_data and "items" in order_data and order_data["items"]:
+                # Enhance with product matching
+                enhanced_items = self._match_products_to_catalog(order_data["items"], state["group_id"])
+                order_data["items"] = enhanced_items
+                return order_data
                 
             return None
             
@@ -858,8 +893,47 @@ Customer message: {message}
     async def process_message(self, customer_id: int, group_id: int, message: str, 
                             conversation_state: str = "idle", 
                             context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Process a customer message through the AI agent"""
+        """Process a customer message through the AI agent with security validation"""
         
+        # 1. Security validation and sanitization
+        try:
+            # Validate message length and sanitize input
+            if not message:
+                message = ""
+            
+            # Apply security validation
+            sanitized_message = SecurityValidator.sanitize_user_input(message)
+            
+            # Check if message was heavily filtered (possible attack)
+            if len(sanitized_message) < len(message) * 0.3:
+                logger.warning(f"Message heavily filtered for customer {customer_id}: {message[:100]}...")
+                return {
+                    "intent": Intent.UNKNOWN,
+                    "action": "security_filtered",
+                    "response": "I'm sorry, but I cannot process that message. Please rephrase your request."
+                }
+            
+            # Check circuit breaker
+            if not ai_circuit_breaker.call_allowed():
+                logger.warning("AI circuit breaker is open - too many failures")
+                return {
+                    "intent": Intent.UNKNOWN,
+                    "action": "service_unavailable",
+                    "response": "AI assistant is temporarily unavailable due to high error rate. Please try again in a few minutes."
+                }
+            
+            # Use sanitized message for processing
+            message = sanitized_message
+            
+        except Exception as e:
+            logger.error(f"Security validation failed: {str(e)}")
+            return {
+                "intent": Intent.UNKNOWN,
+                "action": "security_error",
+                "response": "Unable to process your message due to security validation. Please try again."
+            }
+        
+        # 2. Check AI agent initialization
         if not self.llm or not self.graph:
             logger.warning("AI agent not initialized. Falling back to basic processing.")
             return {
@@ -1066,6 +1140,123 @@ Customer message: {message}
             logger.debug(f"Message validation: {len(messages)} -> {len(valid_messages)} valid messages")
             
         return valid_messages
+    
+    def _get_segment_discount(self, customer_segment: str) -> float:
+        """Get discount percentage based on customer segment"""
+        segment_discounts = {
+            "vip": 15.0,
+            "loyal": 10.0,
+            "regular": 5.0,
+            "new": 0.0,
+            "at_risk": 20.0  # Special discount to retain at-risk customers
+        }
+        return segment_discounts.get(customer_segment.lower(), 0.0)
+    
+    def _find_similar_products(self, item_name: str, category: str = None, customer_id: int = None) -> List[Dict[str, Any]]:
+        """Find similar products based on name and category"""
+        try:
+            # Simple similarity matching - in production, you'd use more sophisticated ML
+            from app.models import Product
+            
+            query = self.db.query(Product).filter(Product.is_active == True)
+            
+            if category:
+                query = query.filter(Product.category == category)
+            
+            # Look for products with similar names
+            similar_products = query.filter(
+                Product.name.ilike(f"%{item_name}%")
+            ).limit(5).all()
+            
+            result = []
+            for product in similar_products:
+                result.append({
+                    "id": product.id,
+                    "name": product.name,
+                    "price": product.get_current_price(),
+                    "category": product.category.value if product.category else None,
+                    "similarity_reason": "name_match"
+                })
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error finding similar products: {str(e)}")
+            return []
+    
+    def _calculate_match_confidence(self, search_name: str, product_name: str) -> float:
+        """Calculate confidence score for product matching"""
+        try:
+            search_lower = search_name.lower().strip()
+            product_lower = product_name.lower().strip()
+            
+            # Exact match
+            if search_lower == product_lower:
+                return 1.0
+            
+            # Contains match
+            if search_lower in product_lower or product_lower in search_lower:
+                return 0.8
+            
+            # Word overlap
+            search_words = set(search_lower.split())
+            product_words = set(product_lower.split())
+            overlap = len(search_words & product_words)
+            total_words = len(search_words | product_words)
+            
+            if total_words > 0:
+                return overlap / total_words
+            
+            return 0.0
+            
+        except Exception:
+            return 0.0
+    
+    def _find_best_variant_match(self, product: 'Product', item_data: Dict[str, Any]) -> Optional['ProductVariant']:
+        """Find the best matching variant for a product"""
+        try:
+            if not product.has_variants:
+                return None
+            
+            from app.models import ProductVariant
+            
+            # Get item attributes
+            item_attributes = item_data.get("attributes", {})
+            item_notes = item_data.get("notes", "").lower()
+            
+            # Find variants
+            variants = self.db.query(ProductVariant).filter(
+                ProductVariant.product_id == product.id,
+                ProductVariant.is_active == True
+            ).all()
+            
+            best_match = None
+            best_score = 0.0
+            
+            for variant in variants:
+                score = 0.0
+                variant_options = variant.variant_options or {}
+                
+                # Match based on attributes
+                for attr_key, attr_value in item_attributes.items():
+                    if attr_key.lower() in variant_options:
+                        if str(attr_value).lower() == str(variant_options[attr_key]).lower():
+                            score += 1.0
+                
+                # Match based on notes
+                for option_key, option_value in variant_options.items():
+                    if str(option_value).lower() in item_notes:
+                        score += 0.5
+                
+                if score > best_score:
+                    best_score = score
+                    best_match = variant
+            
+            return best_match
+            
+        except Exception as e:
+            logger.error(f"Error finding best variant match: {str(e)}")
+            return None
 
 def get_ai_agent(db: Session) -> OrderBotAgent:
     """Get initialized AI agent instance"""

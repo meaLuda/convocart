@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Access Forbidden | ConvoCart{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="error-card">
+        <!-- Error Icon -->
+        <div class="flex justify-center mb-6">
+            <div class="w-24 h-24 bg-gradient-to-br from-warning-100 to-warning-200 rounded-full flex items-center justify-center">
+                <i class="fas fa-lock text-4xl text-warning-500"></i>
+            </div>
+        </div>
+        
+        <!-- Error Code -->
+        <h1 class="error-code">403</h1>
+        
+        <!-- Error Title -->
+        <h2 class="error-title">Access Forbidden</h2>
+        
+        <!-- Error Description -->
+        <p class="error-description">
+            You don't have permission to access this resource. Please check your credentials.
+        </p>
+        
+        <!-- Access Information -->
+        <div class="mt-4 p-4 bg-warning-50 rounded-xl border border-warning-200">
+            <div class="flex items-start">
+                <div class="flex-shrink-0">
+                    <i class="fas fa-info-circle text-warning-500 mt-0.5"></i>
+                </div>
+                <div class="ml-3 text-left">
+                    <h4 class="text-sm font-medium text-warning-800">Access Requirements</h4>
+                    <p class="text-xs text-warning-700 mt-1">
+                        Admin privileges are required to access this section of ConvoCart.
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="space-y-3 mt-6">
+            <a href="/admin/login" 
+                class="btn btn-primary w-full">
+                <i class="fas fa-sign-in-alt mr-2"></i>
+                Sign In
+            </a>
+            
+            <button onclick="window.history.back()" 
+                class="btn btn-outline w-full">
+                <i class="fas fa-arrow-left mr-2"></i>
+                Go Back
+            </button>
+        </div>
+        
+        <!-- Help Information -->
+        <div class="mt-8 pt-6 border-t border-gray-200">
+            <p class="text-sm text-gray-500 mb-3">Need access?</p>
+            <div class="text-sm text-gray-600">
+                <p class="mb-2">
+                    <i class="fas fa-user-shield mr-2"></i>
+                    Contact your administrator for access permissions
+                </p>
+                <p>
+                    <i class="fas fa-key mr-2"></i>
+                    Ensure you're logged in with the correct account
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Check if user is logged in
+if (!document.cookie.includes('session')) {
+    setTimeout(function() {
+        if (confirm('You need to sign in to access this page. Redirect to login?')) {
+            window.location.href = '/admin/login';
+        }
+    }, 3000);
+}
+</script>
+{% endblock %}
