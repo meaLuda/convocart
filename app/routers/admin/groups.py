@@ -126,6 +126,7 @@ async def list_groups(
 async def new_group_form(
     request: Request,
     current_admin: models.User = Depends(get_current_admin),
+    csrf_protect: CsrfProtect = Depends(),
     db: Session = Depends(get_db)
 ):
     """Form to create a new group"""
@@ -133,15 +134,22 @@ async def new_group_form(
     categories = db.query(models.Group.category).distinct().all()
     categories = [cat[0] for cat in categories if cat[0]]
     
-    return templates.TemplateResponse(
+    # Generate CSRF tokens and set cookie
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    
+    response = templates.TemplateResponse(
         "group_form.html",
         {
             "request": request,
             "admin": current_admin,
             "categories": categories,
             "group": None,  # No existing group for a new form
+            "csrf_token": csrf_token
         }
     )
+    
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 @router.post("/admin/groups/new")
 async def create_group(
@@ -250,6 +258,7 @@ async def create_group(
 async def edit_group_form(
     group_id: int,
     request: Request,
+    csrf_protect: CsrfProtect = Depends(),
     db: Session = Depends(get_db)
 ):
     """Form to edit an existing group"""
@@ -272,15 +281,22 @@ async def edit_group_form(
     if group.category and group.category not in categories:
         categories.append(group.category)
     
-    return templates.TemplateResponse(
+    # Generate CSRF tokens and set cookie
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    
+    response = templates.TemplateResponse(
         "group_form.html",
         {
             "request": request,
             "admin": current_admin,
             "group": group,
             "categories": categories,
+            "csrf_token": csrf_token
         }
     )
+    
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 @router.post("/admin/groups/{group_id}/edit")
 async def update_group(

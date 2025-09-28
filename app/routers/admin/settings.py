@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @router.get("/admin/settings", response_class=HTMLResponse)
 async def settings_page(
     request: Request,
+    csrf_protect: CsrfProtect = Depends(),
     db: Session = Depends(get_db)
 ):
     """Settings configuration page"""
@@ -28,14 +29,21 @@ async def settings_page(
     # Get all configuration values
     configs = db.query(models.Configuration).all()
     
-    return templates.TemplateResponse(
+    # Generate CSRF tokens and set cookie
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    
+    response = templates.TemplateResponse(
         "settings.html",
         {
             "request": request,
             "admin": current_admin,
-            "configs": configs
+            "configs": configs,
+            "csrf_token": csrf_token
         }
     )
+    
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 @router.post("/admin/settings/update")
 async def update_settings(

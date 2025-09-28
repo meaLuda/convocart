@@ -178,13 +178,10 @@ async def orders_datatable(
                 selected = "selected" if order.payment_status and order.payment_status.value == p_status else ""
                 payment_options += f'<option value="{p_status}" {selected}>{p_status.title()}</option>'
             
-            # Generate CSRF token for this form
-            csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
-            
             actions = f'''
                 <div class="w-48">
                     <form method="POST" action="/admin/orders/{order.id}/status" class="order-update-form space-y-2" data-order-id="{order.id}">
-                        <input type="hidden" name="csrf_token" value="{csrf_token}">
+                        <input type="hidden" name="csrf_token" class="csrf-token-field">
                         <!-- Order Status -->
                         <div>
                             <label class="block text-xs font-medium text-gray-700 mb-1">Status</label>

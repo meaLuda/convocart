@@ -5,6 +5,9 @@
 {% block page_title %}Orders{% endblock %}
 
 {% block content %}
+<!-- Hidden CSRF token for JavaScript -->
+<input type="hidden" id="csrf_token" value="{{ csrf_token }}">
+
 <!-- Modern Header with Actions -->
 <div class="mb-6">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -258,8 +261,18 @@ $(document).ready(function() {
         }
     });
 
+    // Populate CSRF tokens in dynamic forms
+    function populateCsrfTokens() {
+        const csrfToken = document.getElementById('csrf_token').value;
+        $('.csrf-token-field').val(csrfToken);
+        console.log('CSRF tokens populated:', csrfToken);
+    }
+
     // Enhanced action handlers with modern UX
     function bindOrderActions() {
+        // Populate CSRF tokens first
+        populateCsrfTokens();
+        
         $('.order-update-form').off('submit').on('submit', function(e) {
             e.preventDefault();
             

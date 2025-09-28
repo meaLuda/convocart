@@ -33,6 +33,7 @@ async def view_orders(
     page: int = 1,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    csrf_protect: CsrfProtect = Depends(),
     db: Session = Depends(get_db)
 ):
     """View and manage orders"""
@@ -103,7 +104,10 @@ async def view_orders(
     # Calculate pagination info
     total_pages = (total_orders + page_size - 1) // page_size
     
-    return templates.TemplateResponse(
+    # Generate CSRF tokens and set cookie 
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    
+    response = templates.TemplateResponse(
         "orders.html",
         {
             "request": request,
@@ -114,9 +118,14 @@ async def view_orders(
             "total_pages": total_pages,
             "total_orders": total_orders,
             "status_filter": status,
-            "order_statuses": [status.value for status in models.OrderStatus]
+            "order_statuses": [status.value for status in models.OrderStatus],
+            "csrf_token": csrf_token
         }
     )
+    
+    # Set CSRF cookie (CRITICAL - this was missing!)
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 @router.post("/admin/orders/{order_id}/status")
 async def update_order_status(
@@ -131,6 +140,24 @@ async def update_order_status(
     db: Session = Depends(get_db)
 ):
     """Update order status and optionally notify customer"""
+    # Debug: Check what tokens we have
+    logger.info(f"=== CSRF DEBUG for order {order_id} ===")
+    
+    # Check form data
+    form_data = await request.form()
+    csrf_token_from_form = form_data.get('csrf_token')
+    logger.info(f"CSRF token from form: {csrf_token_from_form}")
+    
+    # Check headers
+    csrf_token_from_header = request.headers.get('X-CSRF-Token')
+    logger.info(f"CSRF token from header: {csrf_token_from_header}")
+    
+    # Check cookies
+    csrf_cookie = request.cookies.get('fastapi-csrf-token')
+    logger.info(f"CSRF cookie value: {csrf_cookie}")
+    
+    logger.info("================================")
+    
     # Validate CSRF token (flexible - accepts header OR body)
     await csrf_protect.validate_csrf(request)
     logger.info(f"✅ CSRF validation passed for order {order_id}")
