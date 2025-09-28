@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, asc, func
+from fastapi_csrf_protect import CsrfProtect
 
 from app.database import get_db
 from app import models
@@ -25,6 +26,7 @@ async def orders_datatable(
     search_value: str = Query("", alias="search[value]", description="Global search value"),
     order_column: int = Query(0, alias="order[0][column]", description="Column to order data by"),
     order_dir: str = Query("asc", alias="order[0][dir]", description="Order direction"),
+    csrf_protect: CsrfProtect = Depends(),
     db: Session = Depends(get_db)
 ):
     """Server-side processing for Orders DataTable"""
@@ -176,9 +178,13 @@ async def orders_datatable(
                 selected = "selected" if order.payment_status and order.payment_status.value == p_status else ""
                 payment_options += f'<option value="{p_status}" {selected}>{p_status.title()}</option>'
             
+            # Generate CSRF token for this form
+            csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+            
             actions = f'''
                 <div class="w-48">
                     <form method="POST" action="/admin/orders/{order.id}/status" class="order-update-form space-y-2" data-order-id="{order.id}">
+                        <input type="hidden" name="csrf_token" value="{csrf_token}">
                         <!-- Order Status -->
                         <div>
                             <label class="block text-xs font-medium text-gray-700 mb-1">Status</label>

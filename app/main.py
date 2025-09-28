@@ -183,9 +183,8 @@ def get_csrf_config():
         ('secret_key', settings.secret_key),
         ('cookie_secure', False),  # Temporarily disable for testing
         ('cookie_samesite', 'lax'),
-        ('token_location', 'header'),  # Only check header, not form
-        ('header_name', 'X-CSRF-Token'),
-        ('header_type', '')  # No prefix needed
+        ('token_location', 'body'),  # Check form body for token
+        ('token_key', 'csrf_token')  # Name of the form field
     ]
 
 csrf = CsrfProtect()
