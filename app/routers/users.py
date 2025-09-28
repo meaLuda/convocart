@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Import shared templates configuration
 from app.templates_config import templates
-from fastapi_csrf_protect import CsrfProtect
+from fastapi_csrf_protect.flexible import CsrfProtect
 
 
 # OAuth2 password bearer

@@ -9,7 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from fastapi_csrf_protect import CsrfProtect
+from fastapi_csrf_protect.flexible import CsrfProtect
 from fastapi_csrf_protect.exceptions import CsrfProtectError
 from sqlalchemy.orm import Session
 from pathlib import Path
@@ -176,15 +176,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# CSRF Protection Configuration
+# CSRF Protection Configuration (Flexible - accepts header OR body)
 @CsrfProtect.load_config
 def get_csrf_config():
     return [
         ('secret_key', settings.secret_key),
         ('cookie_secure', False),  # Temporarily disable for testing
         ('cookie_samesite', 'lax'),
-        ('token_location', 'body'),  # Check form body for token
         ('token_key', 'csrf_token')  # Name of the form field
+        # Note: flexible sub-package ignores token_location - accepts both
     ]
 
 csrf = CsrfProtect()

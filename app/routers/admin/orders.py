@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi_csrf_protect import CsrfProtect
+from fastapi_csrf_protect.flexible import CsrfProtect
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -131,12 +131,9 @@ async def update_order_status(
     db: Session = Depends(get_db)
 ):
     """Update order status and optionally notify customer"""
-    # Log incoming CSRF token for debugging
-    csrf_header = request.headers.get("X-CSRF-Token", "None")
-    logger.info(f"Received CSRF token: {csrf_header[:20] if csrf_header != 'None' else 'None'}... (truncated)")
-    
-    # Validate CSRF token
+    # Validate CSRF token (flexible - accepts header OR body)
     await csrf_protect.validate_csrf(request)
+    logger.info(f"✅ CSRF validation passed for order {order_id}")
     
     # Get the current admin user
     current_admin = await get_current_admin(request, db)

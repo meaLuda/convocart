@@ -5,7 +5,7 @@ Handles system configuration and WhatsApp settings
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi_csrf_protect import CsrfProtect
+from fastapi_csrf_protect.flexible import CsrfProtect
 from sqlalchemy.orm import Session
 
 from app.database import get_db
