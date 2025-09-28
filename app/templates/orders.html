@@ -282,10 +282,13 @@ $(document).ready(function() {
             
             const formData = new FormData(form[0]);
             
+            const csrfToken = document.getElementById('csrf_token').value;
+            console.log('Sending CSRF token:', csrfToken);
+            
             fetch(form.attr('action'), {
                 method: 'POST',
                 headers: {
-                    'X-CSRF-Token': document.getElementById('csrf_token').value
+                    'X-CSRF-Token': csrfToken
                 },
                 body: formData
             })

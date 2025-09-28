@@ -106,6 +106,7 @@ async def view_orders(
     
     # Generate CSRF token
     csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    logger.info(f"Generated CSRF token: {csrf_token[:20]}... (truncated)")
     
     return templates.TemplateResponse(
         "orders.html",
@@ -136,6 +137,10 @@ async def update_order_status(
     db: Session = Depends(get_db)
 ):
     """Update order status and optionally notify customer"""
+    # Log incoming CSRF token for debugging
+    csrf_header = request.headers.get("X-CSRF-Token", "None")
+    logger.info(f"Received CSRF token: {csrf_header[:20] if csrf_header != 'None' else 'None'}... (truncated)")
+    
     # Validate CSRF token
     await csrf_protect.validate_csrf(request)
     

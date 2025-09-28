@@ -181,8 +181,11 @@ app.add_middleware(
 def get_csrf_config():
     return [
         ('secret_key', settings.secret_key),
-        ('cookie_secure', not settings.debug),
-        ('cookie_samesite', 'lax')
+        ('cookie_secure', False),  # Temporarily disable for testing
+        ('cookie_samesite', 'lax'),
+        ('token_location', 'header'),  # Only check header, not form
+        ('header_name', 'X-CSRF-Token'),
+        ('header_type', '')  # No prefix needed
     ]
 
 csrf = CsrfProtect()
