@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -149,6 +150,9 @@ app = FastAPI(
 
 # Configure CORS origins from settings
 origins = settings.cors_origins if hasattr(settings, 'cors_origins') else ["*"]
+
+# Add session middleware (required for CSRF protection)
+app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
 
 # Add security middleware (order matters - HTTPS redirect should be first)
 # app.add_middleware(HTTPSRedirectMiddleware)  # Temporarily disabled for development
