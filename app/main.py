@@ -151,17 +151,17 @@ app = FastAPI(
 origins = settings.cors_origins if hasattr(settings, 'cors_origins') else ["*"]
 
 # Add security middleware (order matters - HTTPS redirect should be first)
-app.add_middleware(HTTPSRedirectMiddleware)
+# app.add_middleware(HTTPSRedirectMiddleware)  # Temporarily disabled for development
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(SessionCleanupMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 
 # Rate limiting middleware (configurable)
 if settings.environment == "production":
-    app.add_middleware(RateLimitingMiddleware, requests_per_minute=60)
+    app.add_middleware(RateLimitingMiddleware, requests_per_minute=300)  # Increased temporarily
 else:
     # More lenient rate limiting for development
-    app.add_middleware(RateLimitingMiddleware, requests_per_minute=120)
+    app.add_middleware(RateLimitingMiddleware, requests_per_minute=300)
 
 # CORS middleware (should be after security middleware)
 app.add_middleware(
