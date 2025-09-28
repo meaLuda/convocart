@@ -5,268 +5,395 @@
 {% block page_title %}Orders{% endblock %}
 
 {% block content %}
-<div class="bg-white rounded-lg shadow-md p-6 mb-6">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">Orders</h1>
-        
-        <div class="flex space-x-2">
-            <a href="/admin/orders" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 {% if not status_filter %}font-bold{% endif %}">
-                All
-            </a>
-            <a href="/admin/orders?status=pending" class="px-3 py-1 bg-yellow-100 rounded hover:bg-yellow-200 {% if status_filter == 'pending' %}font-bold{% endif %}">
-                Pending
-            </a>
-            <a href="/admin/orders?status=processing" class="px-3 py-1 bg-blue-100 rounded hover:bg-blue-200 {% if status_filter == 'processing' %}font-bold{% endif %}">
-                Processing
-            </a>
-            <a href="/admin/orders?status=completed" class="px-3 py-1 bg-green-100 rounded hover:bg-green-200 {% if status_filter == 'completed' %}font-bold{% endif %}">
-                Completed
-            </a>
-            <a href="/admin/orders?status=cancelled" class="px-3 py-1 bg-red-100 rounded hover:bg-red-200 {% if status_filter == 'cancelled' %}font-bold{% endif %}">
-                Cancelled
-            </a>
-            <a href="/admin/orders?status=refunded" class="px-3 py-1 bg-purple-100 rounded hover:bg-purple-200 {% if status_filter == 'refunded' %}font-bold{% endif %}">
-                Refunded
-            </a>
-        </div>
-        <div class="flex space-x-2">
-            <input type="text" id="daterange" class="border rounded px-2 py-1" placeholder="Select date range">
-            <button onclick="filterByDate()" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Filter</button>
-        </div>
-    </div>
-    
-        {% if orders %}
-    <div class="overflow-x-auto">
-        <table class="w-full border-collapse">
-            <thead>
-                <tr class="bg-gray-100">
-                    <th class="border p-2 text-left">Order #</th>
-                    <th class="border p-2 text-left">Customer</th>
-                    {% if admin.role.value == 'super_admin' %}
-                    <th class="border p-2 text-left">Group</th>
-                    {% endif %}
-                    <th class="border p-2 text-left">Details</th>
-                    <th class="border p-2 text-left">Status</th>
-                    <th class="border p-2 text-left">Payment</th>
-                    <th class="border p-2 text-left">Amount</th>
-                    <th class="border p-2 text-left">Date</th>
-                    <th class="border p-2 text-left">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for order in orders %}
-                <tr class="hover:bg-gray-50">
-                    <td class="border p-2">{{ order.order_number }}</td>
-                    <td class="border p-2">
-                        {% if order.id in customer_info %}
-                            {{ customer_info[order.id].name }}<br>
-                            <span class="text-xs text-gray-600">{{ customer_info[order.id].phone_number }}</span>
-                        {% else %}
-                            Customer #{{ order.customer_id }}
-                        {% endif %}
-                    </td>
-                    {% if admin.role.value == 'super_admin' %}
-                    <td class="border p-2">
-                        {% if order.group %}
-                            {{ order.group.name }}
-                        {% else %}
-                            Group #{{ order.group_id }}
-                        {% endif %}
-                    </td>
-                    {% endif %}
-                    <td class="border p-2">{{ order.order_details[:50] }}{% if order.order_details|length > 50 %}...{% endif %}</td>
-                    <td class="border p-2">
-                        <span class="px-2 py-1 rounded-full text-xs 
-                            {% if order.status.value == 'pending' %}bg-yellow-100 text-yellow-800
-                            {% elif order.status.value == 'processing' %}bg-blue-100 text-blue-800
-                            {% elif order.status.value == 'completed' %}bg-green-100 text-green-800
-                            {% elif order.status.value == 'cancelled' %}bg-red-100 text-red-800
-                            {% elif order.status.value == 'refunded' %}bg-purple-100 text-purple-800
-                            {% endif %}">
-                            {{ order.status.value }}
-                        </span>
-                    </td>
-                    <td class="border p-2">
-                        {% if order.payment_method %}
-                            <span class="text-sm">
-                                {{ order.payment_method.value|replace('_', ' ')|title }}
-                                <span class="ml-1 px-1 py-0 text-xs rounded-full 
-                                    {% if order.payment_status.value == 'paid' %}bg-blue-100 text-blue-800
-                                    {% elif order.payment_status.value == 'verified' %}bg-green-100 text-green-800
-                                    {% elif order.payment_status.value == 'unpaid' %}bg-yellow-100 text-yellow-800
-                                    {% elif order.payment_status.value == 'failed' %}bg-red-100 text-red-800
-                                    {% elif order.payment_status.value == 'refunded' %}bg-purple-100 text-purple-800
-                                    {% endif %}">
-                                    {{ order.payment_status.value }}
-                                </span>
-                            </span>
-                            {% if order.payment_ref %}
-                            <br><span class="text-xs text-gray-600">Ref: {{ order.payment_ref }}</span>
-                            {% endif %}
-                        {% else %}
-                            <span class="text-xs text-gray-500">Not specified</span>
-                        {% endif %}
-                    </td>
-                    <td class="border p-2 text-xs">Ksh {{ "%.2f"|format(order.total_amount) }}</td>
-                    <td class="border p-2" title="{{ order.created_at }}">
-                        {{ order.created_at.strftime('%Y-%m-%d %H:%M') }}
-                    </td>
-                    <td class="border p-2">
-                        <form method="POST" action="/admin/orders/{{ order.id }}/status" class="order-update-form flex flex-col space-y-2" data-order-id="{{ order.id }}">
-                            <div class="flex space-x-1">
-                                <select name="status" class="text-sm border rounded px-2 py-1">
-                                    {% for status in order_statuses %}
-                                    <option value="{{ status }}" {% if order.status.value == status %}selected{% endif %}>
-                                        {{ status|title }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                                <button type="submit" class="update-btn bg-blue-600 text-white px-2 py-1 rounded text-sm hover:bg-blue-700">
-                                    Update
-                                </button>
-                            </div>
-                            <div class="flex space-x-1">
-                                <select name="payment_status" class="text-sm border rounded px-2 py-1">
-                                    {% for status in ['unpaid', 'paid', 'verified', 'failed', 'refunded'] %}
-                                    <option value="{{ status }}" {% if order.payment_status and order.payment_status.value == status %}selected{% endif %}>
-                                        {{ status|title }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                                <input type="text" name="payment_ref" placeholder="Payment ref" 
-                                    value="{{ order.payment_ref or '' }}" class="text-sm border rounded px-2 py-1 w-24">
-                            </div>
-                            <div class="flex space-x-1">
-                                <div class="flex items-center">
-                                    <span class="text-xs mr-1">KSH</span>
-                                    <input type="number" name="total_amount" placeholder="Amount" 
-                                        value="{{ order.total_amount or 0 }}" step="0.01" min="0"
-                                        class="text-sm border rounded px-2 py-1 w-24">
-                                </div>
-                                <div class="flex items-center ml-2">
-                                    <input type="checkbox" name="notify_customer" id="notify_{{ order.id }}" value="True" class="mr-2">
-                                    <label for="notify_{{ order.id }}" class="text-xs">Notify customer</label>
-                                </div>
-                            </div>
-                            <div class="update-feedback hidden mt-2 p-1 text-xs rounded"></div>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    
-    <!-- Pagination -->
-    {% if total_pages > 1 %}
-    <div class="flex justify-between items-center mt-6">
+<!-- Modern Header with Actions -->
+<div class="mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-            Showing page {{ current_page }} of {{ total_pages }}
-            ({{ total_orders }} total orders)
+            <h1 class="text-2xl font-semibold text-gray-900">Orders</h1>
+            <p class="text-sm text-gray-600 mt-1">Manage and track customer orders</p>
         </div>
-        
-        <div class="flex space-x-2">
-            {% if current_page > 1 %}
-            <a href="/admin/orders?page={{ current_page - 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}" 
-               class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
-                Previous
-            </a>
-            {% endif %}
-            
-            {% if current_page < total_pages %}
-            <a href="/admin/orders?page={{ current_page + 1 }}{% if status_filter %}&status={{ status_filter }}{% endif %}" 
-               class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">
-                Next
-            </a>
-            {% endif %}
+        <div class="flex items-center gap-3">
+            <div class="flex items-center bg-gray-100 rounded-lg p-1">
+                <button id="list-view" class="px-3 py-1.5 text-xs font-medium rounded-md bg-white text-gray-900 shadow-sm">
+                    <i class="fas fa-list mr-1.5"></i>List
+                </button>
+                <button id="compact-view" class="px-3 py-1.5 text-xs font-medium rounded-md text-gray-600 hover:text-gray-900">
+                    <i class="fas fa-th mr-1.5"></i>Compact
+                </button>
+            </div>
         </div>
     </div>
-    {% endif %}
-    
-    {% else %}
-    <div class="text-center py-8">
-        <p class="text-gray-500 italic">No orders found.</p>
+</div>
+
+<!-- Modern Filter Tabs -->
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+    <div class="border-b border-gray-200">
+        <nav class="-mb-px flex space-x-8 px-6" aria-label="Tabs">
+            <button class="status-filter-btn group inline-flex items-center py-3 px-1 border-b-2 font-medium text-sm border-indigo-500 text-indigo-600" data-status="">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 mr-2">
+                    {{ total_orders|default(0) }}
+                </span>
+                All Orders
+            </button>
+            <button class="status-filter-btn group inline-flex items-center py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 font-medium text-sm" data-status="pending">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 mr-2">
+                    <span class="w-1.5 h-1.5 bg-yellow-400 rounded-full mr-1"></span>
+                    <span id="pending-count">0</span>
+                </span>
+                Pending
+            </button>
+            <button class="status-filter-btn group inline-flex items-center py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 font-medium text-sm" data-status="processing">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
+                    <span class="w-1.5 h-1.5 bg-blue-400 rounded-full mr-1"></span>
+                    <span id="processing-count">0</span>
+                </span>
+                Processing
+            </button>
+            <button class="status-filter-btn group inline-flex items-center py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 font-medium text-sm" data-status="completed">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mr-2">
+                    <span class="w-1.5 h-1.5 bg-green-400 rounded-full mr-1"></span>
+                    <span id="completed-count">0</span>
+                </span>
+                Completed
+            </button>
+            <button class="status-filter-btn group inline-flex items-center py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 font-medium text-sm" data-status="cancelled">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mr-2">
+                    <span class="w-1.5 h-1.5 bg-red-400 rounded-full mr-1"></span>
+                    <span id="cancelled-count">0</span>
+                </span>
+                Cancelled
+            </button>
+            <button class="status-filter-btn group inline-flex items-center py-3 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 font-medium text-sm" data-status="refunded">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 mr-2">
+                    <span class="w-1.5 h-1.5 bg-purple-400 rounded-full mr-1"></span>
+                    <span id="refunded-count">0</span>
+                </span>
+                Refunded
+            </button>
+        </nav>
     </div>
-    {% endif %}
+
+    <!-- Enhanced DataTables Container -->
+    <div class="relative">
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10 hidden">
+            <div class="flex items-center space-x-2 text-gray-600">
+                <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div>
+                <span class="text-sm font-medium">Loading orders...</span>
+            </div>
+        </div>
+
+        <!-- Modern Compact Table -->
+        <div class="overflow-hidden">
+            <table id="orders-table" class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Order
+                        </th>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Customer
+                        </th>
+                        {% if admin.role.value == 'super_admin' %}
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Group
+                        </th>
+                        {% endif %}
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Status
+                        </th>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Payment
+                        </th>
+                        <th scope="col" class="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Amount
+                        </th>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Date
+                        </th>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Actions
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    <!-- DataTables will populate this automatically -->
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    new Litepicker({
-        element: document.getElementById('daterange'),
-        singleMode: false,
-        format: 'YYYY-MM-DD'
+$(document).ready(function() {
+    // Modern loading state management
+    function showLoading() {
+        $('#loading-overlay').removeClass('hidden');
+    }
+    
+    function hideLoading() {
+        $('#loading-overlay').addClass('hidden');
+    }
+
+    // Initialize enhanced DataTables with modern settings
+    const ordersTable = $('#orders-table').DataTable({
+        processing: true,
+        serverSide: true,
+        ajax: {
+            url: '/api/datatables/orders',
+            type: 'GET',
+            data: function(d) {
+                return d;
+            },
+            beforeSend: function() {
+                showLoading();
+            },
+            complete: function() {
+                hideLoading();
+            }
+        },
+        responsive: true,
+        pageLength: 20,
+        lengthMenu: [[10, 20, 50, 100], [10, 20, 50, 100]],
+        columns: [
+            { 
+                data: 0, 
+                orderable: true,
+                className: 'px-6 py-4'
+            },
+            { 
+                data: 1, 
+                orderable: true,
+                className: 'px-6 py-4'
+            },
+            {% if admin.role.value == 'super_admin' %}
+            { 
+                data: 2, 
+                orderable: false,
+                className: 'px-6 py-4'
+            },
+            {% endif %}
+            { 
+                data: {% if admin.role.value == 'super_admin' %}3{% else %}2{% endif %}, 
+                orderable: true,
+                className: 'px-6 py-4'
+            },
+            { 
+                data: {% if admin.role.value == 'super_admin' %}4{% else %}3{% endif %}, 
+                orderable: false,
+                className: 'px-6 py-4'
+            },
+            { 
+                data: {% if admin.role.value == 'super_admin' %}5{% else %}4{% endif %}, 
+                orderable: true,
+                className: 'px-6 py-4 text-right'
+            },
+            { 
+                data: {% if admin.role.value == 'super_admin' %}6{% else %}5{% endif %}, 
+                orderable: true,
+                className: 'px-6 py-4'
+            },
+            { 
+                data: {% if admin.role.value == 'super_admin' %}7{% else %}6{% endif %}, 
+                orderable: false,
+                searchable: false,
+                className: 'px-6 py-4'
+            }
+        ],
+        dom: '<"flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 px-6 py-4"<"flex items-center gap-4"l<"export-buttons">><"flex items-center gap-2"f>>rtip',
+        buttons: [
+            {
+                extend: 'collection',
+                text: '<i class="fas fa-download mr-2"></i>Export',
+                className: 'inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500',
+                buttons: [
+                    {
+                        extend: 'csv',
+                        text: '<i class="fas fa-file-csv mr-2"></i>CSV',
+                        title: 'Orders_Export_' + new Date().toISOString().slice(0,10)
+                    },
+                    {
+                        extend: 'excel', 
+                        text: '<i class="fas fa-file-excel mr-2"></i>Excel',
+                        title: 'Orders_Export_' + new Date().toISOString().slice(0,10)
+                    },
+                    {
+                        extend: 'pdf',
+                        text: '<i class="fas fa-file-pdf mr-2"></i>PDF',
+                        title: 'Orders Export',
+                        orientation: 'landscape'
+                    }
+                ]
+            }
+        ],
+        order: [[{% if admin.role.value == 'super_admin' %}6{% else %}5{% endif %}, 'desc']],
+        language: {
+            search: '',
+            searchPlaceholder: 'Search orders...',
+            lengthMenu: '_MENU_ per page',
+            info: '_START_-_END_ of _TOTAL_',
+            infoEmpty: 'No orders',
+            infoFiltered: '(filtered from _MAX_)',
+            paginate: {
+                first: '⟪',
+                last: '⟫', 
+                next: '⟩',
+                previous: '⟨'
+            },
+            emptyTable: '<div class="text-center py-12"><div class="text-gray-400 text-sm">No orders found</div></div>'
+        },
+        drawCallback: function(settings) {
+            bindOrderActions();
+            updateStatusCounts();
+        },
+        initComplete: function() {
+            // Style the search input
+            $('.dataTables_filter input').addClass('block w-full pl-3 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm');
+            
+            // Move export buttons to custom location
+            $('.export-buttons').append($('.dt-buttons'));
+            $('.dt-buttons').addClass('inline-flex');
+        }
     });
 
-    function filterByDate() {
-        const daterange = document.getElementById('daterange').value;
-        if (daterange) {
-            const [startDate, endDate] = daterange.split(' - ');
-            const url = new URL(window.location.href);
-            url.searchParams.set('start_date', startDate);
-            url.searchParams.set('end_date', endDate);
-            window.location.href = url.toString();
-        }
-    }
-</script>
-<script>
-    // Debounce function to prevent multiple rapid submissions
-    document.addEventListener('DOMContentLoaded', function() {
-        const forms = document.querySelectorAll('.order-update-form');
-        
-        forms.forEach(form => {
-            let isSubmitting = false;
-            const feedbackDiv = form.querySelector('.update-feedback');
+    // Enhanced action handlers with modern UX
+    function bindOrderActions() {
+        $('.order-update-form').off('submit').on('submit', function(e) {
+            e.preventDefault();
             
-            form.addEventListener('submit', function(e) {
-                e.preventDefault();
-                
-                if (isSubmitting) {
-                    return; // Prevent multiple submissions
-                }
-                
-                // Visual feedback
-                const submitButton = form.querySelector('.update-btn');
-                const originalText = submitButton.textContent;
-                submitButton.textContent = 'Updating...';
-                submitButton.disabled = true;
-                isSubmitting = true;
-                
-                // Submit the form using fetch API
-                fetch(form.action, {
-                    method: 'POST',
-                    body: new FormData(form)
-                })
-                .then(response => {
-                    if (response.redirected) {
-                        // Success! Show feedback first, then redirect after a short delay
-                        feedbackDiv.textContent = 'Update successful!';
-                        feedbackDiv.classList.remove('hidden', 'bg-red-100', 'text-red-800');
-                        feedbackDiv.classList.add('bg-green-100', 'text-green-800');
-                        
-                        setTimeout(() => {
-                            window.location.href = response.url;
-                        }, 500);
-                    } else {
-                        return response.text().then(text => {
-                            throw new Error(text || 'An error occurred');
-                        });
-                    }
-                })
-                .catch(error => {
-                    // Show error feedback
-                    feedbackDiv.textContent = error.message || 'Update failed. Please try again.';
-                    feedbackDiv.classList.remove('hidden', 'bg-green-100', 'text-green-800');
-                    feedbackDiv.classList.add('bg-red-100', 'text-red-800');
+            const form = $(this);
+            const orderId = form.data('order-id');
+            const submitButton = form.find('.update-btn');
+            const feedbackDiv = form.find('.update-feedback');
+            const originalText = submitButton.html();
+            
+            if (submitButton.prop('disabled')) return;
+            
+            // Modern loading state
+            submitButton.html('<div class="flex items-center"><div class="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-2"></div>Updating</div>')
+                        .prop('disabled', true)
+                        .removeClass('hover:bg-indigo-700')
+                        .addClass('opacity-75 cursor-not-allowed');
+            
+            const formData = new FormData(form[0]);
+            
+            fetch(form.attr('action'), {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (response.ok || response.redirected) {
+                    // Success state
+                    submitButton.html('<i class="fas fa-check mr-1"></i>Updated')
+                               .removeClass('bg-indigo-600 opacity-75')
+                               .addClass('bg-green-600');
                     
-                    // Reset button
-                    submitButton.textContent = originalText;
-                    submitButton.disabled = false;
-                    isSubmitting = false;
-                });
+                    feedbackDiv.removeClass('hidden')
+                              .addClass('bg-green-50 text-green-700 border border-green-200')
+                              .text('Order updated successfully');
+                    
+                    setTimeout(() => {
+                        ordersTable.ajax.reload(null, false);
+                    }, 800);
+                } else {
+                    throw new Error('Update failed');
+                }
+            })
+            .catch(error => {
+                submitButton.html('<i class="fas fa-exclamation-triangle mr-1"></i>Failed')
+                           .removeClass('bg-indigo-600 opacity-75')
+                           .addClass('bg-red-600');
+                
+                feedbackDiv.removeClass('hidden')
+                          .addClass('bg-red-50 text-red-700 border border-red-200')
+                          .text('Update failed. Please try again.');
+            })
+            .finally(() => {
+                setTimeout(() => {
+                    submitButton.html(originalText)
+                               .prop('disabled', false)
+                               .removeClass('opacity-75 cursor-not-allowed bg-green-600 bg-red-600')
+                               .addClass('bg-indigo-600 hover:bg-indigo-700');
+                    feedbackDiv.addClass('hidden').removeClass('bg-green-50 text-green-700 border-green-200 bg-red-50 text-red-700 border-red-200');
+                }, 2000);
             });
         });
+
+        // Enhanced dropdown interactions
+        $('.order-update-form select, .order-update-form input').on('change input', function() {
+            const form = $(this).closest('form');
+            const submitButton = form.find('.update-btn');
+            submitButton.removeClass('opacity-50').addClass('ring-2 ring-indigo-500 ring-opacity-50');
+        });
+    }
+
+    // Modern tab navigation with animations
+    $('.status-filter-btn').on('click', function(e) {
+        e.preventDefault();
+        const status = $(this).data('status');
+        const statusColumnIndex = {% if admin.role.value == 'super_admin' %}3{% else %}2{% endif %};
+        
+        // Update active tab with smooth transition
+        $('.status-filter-btn').removeClass('border-indigo-500 text-indigo-600')
+                               .addClass('border-transparent text-gray-500');
+        $(this).removeClass('border-transparent text-gray-500')
+                .addClass('border-indigo-500 text-indigo-600');
+        
+        // Filter with loading state
+        showLoading();
+        ordersTable.search('');
+        
+        if (status) {
+            ordersTable.column(statusColumnIndex).search(status).draw();
+        } else {
+            ordersTable.column(statusColumnIndex).search('').draw();
+        }
     });
+
+    // View toggle functionality
+    $('#list-view, #compact-view').on('click', function() {
+        const isCompact = $(this).attr('id') === 'compact-view';
+        
+        // Update active view button
+        $('#list-view, #compact-view').removeClass('bg-white text-gray-900 shadow-sm')
+                                      .addClass('text-gray-600 hover:text-gray-900');
+        $(this).removeClass('text-gray-600 hover:text-gray-900')
+                .addClass('bg-white text-gray-900 shadow-sm');
+        
+        // Toggle table density
+        if (isCompact) {
+            $('#orders-table tbody tr').addClass('py-1');
+            $('#orders-table tbody td').addClass('py-2').removeClass('py-3');
+        } else {
+            $('#orders-table tbody tr').removeClass('py-1');
+            $('#orders-table tbody td').removeClass('py-2').addClass('py-3');
+        }
+    });
+
+    // Update status counts from API
+    function updateStatusCounts() {
+        fetch('/api/datatables/orders/status-counts')
+            .then(response => response.json())
+            .then(data => {
+                $('#pending-count').text(data.pending || 0);
+                $('#processing-count').text(data.processing || 0);
+                $('#completed-count').text(data.completed || 0);
+                $('#cancelled-count').text(data.cancelled || 0);
+                $('#refunded-count').text(data.refunded || 0);
+                
+                // Update total in all orders tab
+                $('.status-filter-btn[data-status=""] span').first().text(data.total || 0);
+            })
+            .catch(error => {
+                console.error('Error fetching status counts:', error);
+            });
+    }
+
+    // Initialize
+    bindOrderActions();
+    updateStatusCounts();
+});
 </script>
 {% endblock %}

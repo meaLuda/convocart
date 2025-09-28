@@ -158,22 +158,53 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(() => loginForm.classList.remove('shake'), 500);
     }
     
-    // Enhanced form submission with loading state
+    // Enhanced form submission with loading state and CSRF header
     loginForm.addEventListener('submit', function(e) {
+        e.preventDefault(); // Prevent default form submission
+        
         const submitButton = this.querySelector('button[type="submit"]');
         const buttonText = submitButton.querySelector('.btn-text');
+        const csrfToken = this.querySelector('input[name="csrf_token"]').value;
         
         // Add loading state
         submitButton.classList.add('btn-loading');
         submitButton.disabled = true;
         buttonText.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Signing in...';
         
-        // Re-enable button after 10 seconds as fallback
-        setTimeout(() => {
+        // Create FormData from form
+        const formData = new FormData(this);
+        
+        // Submit with CSRF token in header
+        fetch('/admin/login', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-Token': csrfToken
+            },
+            body: formData
+        })
+        .then(response => {
+            if (response.redirected) {
+                // Successful login - redirect
+                window.location.href = response.url;
+            } else if (response.status === 303 || response.status === 302) {
+                // Handle redirect manually for some browsers
+                return response.text().then(() => {
+                    window.location.href = '/admin/dashboard';
+                });
+            } else {
+                // Error occurred - reload page to show error message
+                window.location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Login error:', error);
+            // Re-enable button on error
             submitButton.classList.remove('btn-loading');
             submitButton.disabled = false;
             buttonText.innerHTML = '<i class="fas fa-sign-in-alt mr-2"></i>Sign In to Dashboard';
-        }, 10000);
+            // Reload page to show error
+            window.location.reload();
+        });
     });
 });
 </script>

@@ -67,6 +67,141 @@
                 class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">{{ group.welcome_message if group else '' }}</textarea>
             <p class="text-xs text-gray-500 mt-1">Custom welcome message sent when users click the WhatsApp link (leave empty for default)</p>
         </div>
+
+        <!-- Payment Methods Configuration -->
+        <div class="border-t pt-6 mt-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Payment Methods</h3>
+            <p class="text-sm text-gray-600 mb-4">Configure how customers can pay for orders in your business.</p>
+            
+            <!-- M-Pesa Till Number -->
+            <div class="bg-gray-50 p-4 rounded-lg mb-4">
+                <div class="flex items-center mb-3">
+                    <input type="checkbox" name="mpesa_till_enabled" id="mpesa_till_enabled" value="True"
+                        {% if group and group.payment_methods and group.payment_methods.get('mpesa_till', {}).get('enabled') %}checked{% endif %}
+                        class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                    <label for="mpesa_till_enabled" class="ml-2 text-sm font-medium text-gray-700">
+                        M-Pesa Till Number (Buy Goods)
+                    </label>
+                </div>
+                <div id="mpesa_till_settings" class="space-y-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label for="mpesa_till_number" class="block text-sm text-gray-600">Till Number</label>
+                            <input type="text" name="mpesa_till_number" id="mpesa_till_number" placeholder="123456"
+                                value="{{ group.payment_methods.get('mpesa_till', {}).get('till_number', '') if group and group.payment_methods else '' }}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                        </div>
+                        <div>
+                            <label for="mpesa_till_business_name" class="block text-sm text-gray-600">Business Name</label>
+                            <input type="text" name="mpesa_till_business_name" id="mpesa_till_business_name" placeholder="Your Business Name"
+                                value="{{ group.payment_methods.get('mpesa_till', {}).get('business_name', '') if group and group.payment_methods else '' }}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="mpesa_till_instructions" class="block text-sm text-gray-600">Custom Instructions</label>
+                        <textarea name="mpesa_till_instructions" id="mpesa_till_instructions" rows="3" placeholder="Pay via M-Pesa:&#10;1. Go to M-Pesa menu&#10;2. Select Lipa na M-Pesa&#10;3. Select Buy Goods and Services&#10;4. Enter Till Number: {till_number}&#10;5. Enter amount&#10;6. Send M-Pesa confirmation message here"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">{{ group.payment_methods.get('mpesa_till', {}).get('instructions', '') if group and group.payment_methods else '' }}</textarea>
+                        <p class="text-xs text-gray-500 mt-1">Use {till_number}, {business_name}, {order_number}, {amount} as placeholders</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- M-Pesa Paybill -->
+            <div class="bg-gray-50 p-4 rounded-lg mb-4">
+                <div class="flex items-center mb-3">
+                    <input type="checkbox" name="mpesa_paybill_enabled" id="mpesa_paybill_enabled" value="True"
+                        {% if group and group.payment_methods and group.payment_methods.get('mpesa_paybill', {}).get('enabled') %}checked{% endif %}
+                        class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                    <label for="mpesa_paybill_enabled" class="ml-2 text-sm font-medium text-gray-700">
+                        M-Pesa Paybill Number
+                    </label>
+                </div>
+                <div id="mpesa_paybill_settings" class="space-y-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label for="mpesa_paybill_number" class="block text-sm text-gray-600">Paybill Number</label>
+                            <input type="text" name="mpesa_paybill_number" id="mpesa_paybill_number" placeholder="123456789"
+                                value="{{ group.payment_methods.get('mpesa_paybill', {}).get('paybill_number', '') if group and group.payment_methods else '' }}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                        </div>
+                        <div>
+                            <label for="mpesa_paybill_account_format" class="block text-sm text-gray-600">Account Number Format</label>
+                            <input type="text" name="mpesa_paybill_account_format" id="mpesa_paybill_account_format" placeholder="ORDER-{order_number}"
+                                value="{{ group.payment_methods.get('mpesa_paybill', {}).get('account_number_format', '') if group and group.payment_methods else '' }}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Airtel Money -->
+            <div class="bg-gray-50 p-4 rounded-lg mb-4">
+                <div class="flex items-center mb-3">
+                    <input type="checkbox" name="airtel_money_enabled" id="airtel_money_enabled" value="True"
+                        {% if group and group.payment_methods and group.payment_methods.get('airtel_money', {}).get('enabled') %}checked{% endif %}
+                        class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                    <label for="airtel_money_enabled" class="ml-2 text-sm font-medium text-gray-700">
+                        Airtel Money
+                    </label>
+                </div>
+                <div id="airtel_money_settings" class="space-y-3">
+                    <div>
+                        <label for="airtel_money_number" class="block text-sm text-gray-600">Airtel Money Number</label>
+                        <input type="text" name="airtel_money_number" id="airtel_money_number" placeholder="+254712345678"
+                            value="{{ group.payment_methods.get('airtel_money', {}).get('number', '') if group and group.payment_methods else '' }}"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bank Transfer -->
+            <div class="bg-gray-50 p-4 rounded-lg mb-4">
+                <div class="flex items-center mb-3">
+                    <input type="checkbox" name="bank_transfer_enabled" id="bank_transfer_enabled" value="True"
+                        {% if group and group.payment_methods and group.payment_methods.get('bank_transfer', {}).get('enabled') %}checked{% endif %}
+                        class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                    <label for="bank_transfer_enabled" class="ml-2 text-sm font-medium text-gray-700">
+                        Bank Transfer
+                    </label>
+                </div>
+                <div id="bank_transfer_settings" class="space-y-3">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div>
+                            <label for="bank_name" class="block text-sm text-gray-600">Bank Name</label>
+                            <input type="text" name="bank_name" id="bank_name" placeholder="Equity Bank"
+                                value="{{ group.payment_methods.get('bank_transfer', {}).get('bank_name', '') if group and group.payment_methods else '' }}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                        </div>
+                        <div>
+                            <label for="bank_account_number" class="block text-sm text-gray-600">Account Number</label>
+                            <input type="text" name="bank_account_number" id="bank_account_number" placeholder="1234567890"
+                                value="{{ group.payment_methods.get('bank_transfer', {}).get('account_number', '') if group and group.payment_methods else '' }}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                        </div>
+                        <div>
+                            <label for="bank_account_name" class="block text-sm text-gray-600">Account Name</label>
+                            <input type="text" name="bank_account_name" id="bank_account_name" placeholder="Business Name Ltd"
+                                value="{{ group.payment_methods.get('bank_transfer', {}).get('account_name', '') if group and group.payment_methods else '' }}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cash on Delivery -->
+            <div class="bg-gray-50 p-4 rounded-lg">
+                <div class="flex items-center">
+                    <input type="checkbox" name="cash_on_delivery_enabled" id="cash_on_delivery_enabled" value="True"
+                        {% if group is none or (group.payment_methods and group.payment_methods.get('cash_on_delivery', {}).get('enabled', true)) %}checked{% endif %}
+                        class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                    <label for="cash_on_delivery_enabled" class="ml-2 text-sm font-medium text-gray-700">
+                        Cash on Delivery / Pay on Delivery
+                    </label>
+                </div>
+                <p class="text-xs text-gray-500 mt-1 ml-6">Allow customers to pay when they receive their order</p>
+            </div>
+        </div>
         
         <div class="flex justify-between pt-4">
             <a href="/admin/groups" class="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">
@@ -101,6 +236,54 @@ document.getElementById('name').addEventListener('input', function() {
 document.getElementById('identifier').addEventListener('input', function() {
     // Mark as manually edited
     this.dataset.manuallyEdited = 'true';
+});
+
+// Payment method settings visibility
+function togglePaymentSettings(checkboxId, settingsId) {
+    const checkbox = document.getElementById(checkboxId);
+    const settings = document.getElementById(settingsId);
+    
+    function updateVisibility() {
+        if (checkbox.checked) {
+            settings.style.display = 'block';
+            settings.style.opacity = '1';
+        } else {
+            settings.style.display = 'none';
+            settings.style.opacity = '0.5';
+        }
+    }
+    
+    // Initial state
+    updateVisibility();
+    
+    // Listen for changes
+    checkbox.addEventListener('change', updateVisibility);
+}
+
+// Initialize payment method toggles
+togglePaymentSettings('mpesa_till_enabled', 'mpesa_till_settings');
+togglePaymentSettings('mpesa_paybill_enabled', 'mpesa_paybill_settings');
+togglePaymentSettings('airtel_money_enabled', 'airtel_money_settings');
+togglePaymentSettings('bank_transfer_enabled', 'bank_transfer_settings');
+
+// Auto-populate M-Pesa Till instructions if empty
+document.getElementById('mpesa_till_number').addEventListener('input', function() {
+    const instructionsField = document.getElementById('mpesa_till_instructions');
+    const businessNameField = document.getElementById('mpesa_till_business_name');
+    
+    if (!instructionsField.value && this.value) {
+        const businessName = businessNameField.value || 'our business';
+        instructionsField.value = `Pay via M-Pesa:
+1. Go to M-Pesa menu
+2. Select Lipa na M-Pesa
+3. Select Buy Goods and Services
+4. Enter Till Number: ${this.value}
+5. Enter amount: {amount}
+6. Complete transaction
+7. Send M-Pesa confirmation message here
+
+Thank you for choosing ${businessName}!`;
+    }
 });
 </script>
 {% endblock %}

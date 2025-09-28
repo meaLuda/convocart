@@ -105,24 +105,168 @@ class WhatsAppService:
     
     def send_quick_reply_buttons(self, to: str, message: str, buttons: list) -> Dict[str, Any]:
         """
-        Send interactive buttons message using Twilio content templates
-        Note: Twilio requires pre-approved templates for interactive messages
-        For now, we'll send text with numbered options
+        Intelligently send interactive buttons or text fallback based on context
+        The bot automatically decides the best approach
         """
         if len(buttons) > 3:
-            logger.warning("Limiting to 3 buttons for better user experience")
+            logger.warning("Limiting to 3 buttons for optimal experience")
             buttons = buttons[:3]
         
+        # Bot decision logic for interactive vs text buttons
+        should_use_interactive = self._should_use_interactive_buttons(to, buttons)
+        
+        if should_use_interactive:
+            interactive_result = self._send_interactive_quick_reply(to, message, buttons)
+            if interactive_result.get("success"):
+                logger.info(f"Bot chose interactive buttons for {to}")
+                return interactive_result
+            else:
+                logger.info(f"Interactive failed, bot falling back to text for {to}")
+        
+        # Fallback to numbered text options
+        logger.info(f"Bot chose text buttons for {to}")
+        return self._send_numbered_text_buttons(to, message, buttons)
+    
+    def _should_use_interactive_buttons(self, to: str, buttons: list) -> bool:
+        """
+        Bot intelligence: Decide when to use interactive buttons vs text
+        """
+        try:
+            # Check if we have a quick reply template configured
+            template_sid = self._get_quick_reply_template_sid()
+            if not template_sid or template_sid == "HX_PLACEHOLDER_QUICK_REPLY":
+                logger.debug("No interactive template configured, using text")
+                return False
+            
+            # Check if this is within a 24-hour conversation window
+            if self.db:
+                from app.models import Customer, ConversationSession
+                from datetime import datetime, timedelta
+                
+                phone_clean = to.replace('whatsapp:', '')
+                customer = self.db.query(Customer).filter(
+                    Customer.phone_number == phone_clean
+                ).first()
+                
+                if customer:
+                    # Check for recent conversation activity (24 hours)
+                    recent_session = self.db.query(ConversationSession).filter(
+                        ConversationSession.customer_id == customer.id,
+                        ConversationSession.last_interaction >= datetime.utcnow() - timedelta(hours=24)
+                    ).first()
+                    
+                    if recent_session:
+                        logger.debug(f"Customer {phone_clean} has active 24h session - using interactive")
+                        return True
+            
+            # Default decision: Use interactive for common button types
+            interactive_keywords = ['order', 'payment', 'delivery', 'mpesa', 'cash', 'confirm', 'cancel']
+            button_text = ' '.join([btn.get('title', '').lower() for btn in buttons])
+            
+            for keyword in interactive_keywords:
+                if keyword in button_text:
+                    logger.debug(f"Found interactive keyword '{keyword}' - using interactive")
+                    return True
+            
+            logger.debug("No interactive criteria met - using text")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error in interactive decision logic: {e}")
+            return False
+    
+    def _send_interactive_quick_reply(self, to: str, message: str, buttons: list) -> Dict[str, Any]:
+        """
+        Send real interactive quick reply buttons using Twilio Content API
+        """
+        try:
+            # Ensure the 'to' number has the whatsapp: prefix
+            if not to.startswith('whatsapp:'):
+                to = f"whatsapp:{to}"
+            
+            # Prepare quick reply actions
+            actions = []
+            for button in buttons:
+                action = {
+                    "title": self._truncate_string(button.get("title", ""), 20),  # 20 char limit
+                    "id": button.get("id", button.get("title", ""))[:200]  # 200 char limit for payload
+                }
+                actions.append(action)
+            
+            # Create content variables for quick reply template
+            content_variables = {
+                "1": self._truncate_string(message, 1024),  # Body text
+                "actions": actions
+            }
+            
+            # Try to send using a pre-created quick reply content template
+            template_sid = self._get_quick_reply_template_sid()
+            twilio_message = self.client.messages.create(
+                from_=self.whatsapp_number,
+                content_sid=template_sid,
+                content_variables=json.dumps(content_variables),
+                to=to
+            )
+            
+            # Track message delivery if database is available
+            if self.db:
+                self._track_message_delivery({
+                    "to": to,
+                    "type": "interactive_buttons",
+                    "text": {"body": message},
+                    "buttons": buttons
+                }, {"messages": [{"id": twilio_message.sid}]})
+            
+            logger.info(f"Interactive buttons sent via Twilio: {twilio_message.sid}")
+            return {
+                "messages": [{"id": twilio_message.sid}],
+                "success": True,
+                "interactive": True
+            }
+            
+        except Exception as e:
+            logger.error(f"Error sending interactive quick reply: {str(e)}")
+            return {"error": str(e), "success": False, "interactive": False}
+    
+    def _send_numbered_text_buttons(self, to: str, message: str, buttons: list) -> Dict[str, Any]:
+        """
+        Send numbered text options as fallback
+        """
         # Format message with button options
         button_text = "\n\n"
         for i, button in enumerate(buttons, 1):
-            title = self._truncate_string(button["title"], 50)
+            title = self._truncate_string(button.get("title", ""), 50)
             button_text += f"{i}. {title}\n"
         
         full_message = self._truncate_string(message, 1400) + button_text
         full_message += "\nReply with the number of your choice."
         
-        return self.send_text_message(to, full_message)
+        result = self.send_text_message(to, full_message)
+        if result.get("success"):
+            result["interactive"] = False
+        return result
+    
+    def _get_quick_reply_template_sid(self) -> str:
+        """
+        Get the Content SID for quick reply template
+        This should be created in Twilio Console and stored in configuration
+        """
+        # Check database configuration first
+        if self.db:
+            try:
+                from app.models import Configuration
+                template_sid = Configuration.get_value(self.db, 'twilio_quick_reply_template_sid', None)
+                if template_sid:
+                    return template_sid
+            except Exception as e:
+                logger.debug(f"Could not fetch template SID from database: {e}")
+        
+        # Fallback to environment variable and then settings
+        template_sid = os.getenv("TWILIO_QUICK_REPLY_TEMPLATE_SID")
+        if not template_sid:
+            template_sid = settings.twilio_quick_reply_template_sid
+        
+        return template_sid or "HX_PLACEHOLDER_QUICK_REPLY"
     
     def send_list_message(self, to: str, message: str, sections: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -415,15 +559,35 @@ class WhatsAppService:
             
             logger.info(f"Twilio webhook: MessageSid={message_sid}, From={from_number}, To={to_number}, Status={message_status}, Body={body[:50] if body else 'None'}")
             
-            # Check if this is a status update (delivery receipt)
-            if message_status in ["delivered", "read", "failed", "undelivered"] and not body:
-                logger.info(f"Processing status update: {message_status} for message {message_sid}")
-                return self._process_twilio_status_update(data)
+            # Check if this is a status update (delivery receipt) - includes "sent" status and outbound messages
+            if message_status in ["queued", "sending", "sent", "delivered", "read", "failed", "undelivered"]:
+                # Status updates for outbound messages have no body and From field is the bot's number
+                bot_number = self.whatsapp_number.replace("whatsapp:", "")
+                if not body or from_number == bot_number:
+                    logger.info(f"Processing status update: {message_status} for message {message_sid}")
+                    return self._process_twilio_status_update(data)
             
             # Check if this is an incoming message (has body and from customer)
             if not from_number or not body:
-                logger.warning(f"Incomplete message data - From: {from_number}, Body: {body}")
+                logger.info(f"Skipping webhook - likely status update without body: From={from_number}, Status={message_status}")
                 return None
+            
+            # Check if this is a button interaction
+            button_text = data.get("ButtonText")
+            button_payload = data.get("ButtonPayload")
+            
+            if button_text or button_payload:
+                logger.info(f"Received button interaction from {from_number}: ButtonText='{button_text}', ButtonPayload='{button_payload}'")
+                
+                return {
+                    "phone_number": from_number,
+                    "name": "Unknown",
+                    "message": button_text or body,  # Use button text or fallback to body
+                    "type": "button_click",
+                    "message_id": message_sid,
+                    "button_payload": button_payload,
+                    "button_text": button_text
+                }
             
             # Process as regular text message from customer
             logger.info(f"Received Twilio WhatsApp message from {from_number}: {body[:50]}...")

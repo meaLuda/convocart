@@ -15,7 +15,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode
 
 from app.config import get_settings
-from app.models import ConversationState, Customer, Order, Group, Product, BusinessType
+from app.models import ConversationState, Customer, Order, Group, Product, ProductVariant, BusinessType
 from app.services.inventory_service import get_inventory_service
 from app.services.analytics_service import get_analytics_service
 from app.services.business_config_service import get_business_config_service
@@ -80,8 +80,7 @@ class OrderBotAgent:
             model=self.settings.ai_model_name,
             google_api_key=self.settings.gemini_api_key,
             temperature=self.settings.ai_temperature,
-            max_output_tokens=self.settings.ai_max_tokens,
-            convert_system_message_to_human=True
+            max_output_tokens=self.settings.ai_max_tokens
         )
         
         # Initialize memory for conversation persistence
@@ -448,22 +447,35 @@ class OrderBotAgent:
             # Ensure we have valid data for prompt construction
             conversation_state = state.get('conversation_state', 'initial') if state else 'initial'
             
+            # Add context-specific guidance for AWAITING_PAYMENT state
+            payment_context = ""
+            if conversation_state == "awaiting_payment":
+                payment_context = """
+            IMPORTANT: The customer was just presented with these payment options:
+            1. Paid with M-Pesa
+            2. Pay on Delivery  
+            3. Cancel Order
+            
+            If the customer responds with a number, interpret it as follows:
+            - "1" = mpesa_payment (they chose option 1: Paid with M-Pesa)
+            - "2" = cash_payment (they chose option 2: Pay on Delivery)
+            - "3" = cancel_order (they chose option 3: Cancel Order)
+            """
+            
             prompt = f"""You are an AI assistant for {group_name}, helping customers via WhatsApp.
-
-Customer: {customer_name}
-Current conversation state: {conversation_state}
-
-Your task is to detect the customer's intent from their message. Respond with ONLY one of these intents:
-- place_order: Customer wants to place a new order
-- track_order: Customer wants to check order status
-- cancel_order: Customer wants to cancel an order
-- mpesa_payment: Customer is providing M-Pesa payment details/confirmation
-- cash_payment: Customer chooses cash on delivery
-- contact_support: Customer needs help or support
-- general_inquiry: General questions about products/services
-- unknown: Intent unclear
-
-Consider the conversation context and respond with just the intent name."""
+            Customer: {customer_name}
+            Current conversation state: {conversation_state}
+            {payment_context}
+            Your task is to detect the customer's intent from their message. Respond with ONLY one of these intents:
+            - place_order: Customer wants to place a new order
+            - track_order: Customer wants to check order status
+            - cancel_order: Customer wants to cancel an order
+            - mpesa_payment: Customer is providing M-Pesa payment details/confirmation
+            - cash_payment: Customer chooses cash on delivery
+            - contact_support: Customer needs help or support
+            - general_inquiry: General questions about products/services
+            - unknown: Intent unclear
+            Consider the conversation context and respond with just the intent name."""
 
             # Validate prompt is not empty
             if not prompt or len(prompt.strip()) < 10:
@@ -471,7 +483,6 @@ Consider the conversation context and respond with just the intent name."""
                 prompt = """You are a helpful AI assistant. Analyze the customer's message and respond with one of these intents: place_order, track_order, cancel_order, mpesa_payment, cash_payment, contact_support, general_inquiry, or unknown."""
             
             return prompt.strip()
-            
         except Exception as e:
             logger.error(f"Error building intent detection prompt: {e}")
             return """You are a helpful AI assistant. Analyze the customer's message and respond with one of these intents: place_order, track_order, cancel_order, mpesa_payment, cash_payment, contact_support, general_inquiry, or unknown."""
@@ -551,20 +562,18 @@ Consider the conversation context and respond with just the intent name."""
         """Extract structured order details from natural language"""
         try:
             prompt = f"""Extract order details from this customer message: "{message}"
+            Return a JSON object with:
+            - items: array of {{name: string, quantity: number, notes: string}}
+            - special_instructions: string
+            - estimated_total: number (if mentioned)
 
-Return a JSON object with:
-- items: array of {{name: string, quantity: number, notes: string}}
-- special_instructions: string
-- estimated_total: number (if mentioned)
+            If you cannot extract clear order details, return null.
+            Example: {{"items": [{{"name": "T-shirt", "quantity": 2, "notes": "size L, red color"}}], "special_instructions": "deliver by 5pm", "estimated_total": 0}}
 
-If you cannot extract clear order details, return null.
-Example: {{"items": [{{"name": "T-shirt", "quantity": 2, "notes": "size L, red color"}}], "special_instructions": "deliver by 5pm", "estimated_total": 0}}
-
-Customer message: {message}
-"""
+            Customer message: {message}
+            """
             
-            response = await self._rate_limited_llm_call([HumanMessage(content=prompt)], 
-                                                        estimated_tokens=len(prompt))
+            response = await self._rate_limited_llm_call([HumanMessage(content=prompt)], estimated_tokens=len(prompt))
             
             # Parse JSON response with improved handling
             order_data = self._parse_json_from_response(response.content)
@@ -611,31 +620,29 @@ Customer message: {message}
             recommendations = self.analytics_service.get_customer_recommendations(customer.id, limit=3)
             
             prompt = f"""{ai_personality}
+            Customer question: {message}
 
-Customer question: {message}
+            Customer context:
+            - Customer segment: {customer_profile.get('advanced_metrics', {}).get('customer_segment', 'new')}
+            - Previous orders: {customer_profile.get('basic_metrics', {}).get('total_orders', 0)}
+            - Preferred categories: {customer_profile.get('category_preferences', {}).get('dominant_category', 'none')}
 
-Customer context:
-- Customer segment: {customer_profile.get('advanced_metrics', {}).get('customer_segment', 'new')}
-- Previous orders: {customer_profile.get('basic_metrics', {}).get('total_orders', 0)}
-- Preferred categories: {customer_profile.get('category_preferences', {}).get('dominant_category', 'none')}
+            Business context:
+            - Business type: {self._get_business_type_str(business_type)}
+            - Business name: {group_name}
 
-Business context:
-- Business type: {self._get_business_type_str(business_type)}
-- Business name: {group_name}
+            If relevant, you can mention these personalized recommendations:
+            {', '.join([rec.get('name', '') for rec in recommendations[:2]])}
 
-If relevant, you can mention these personalized recommendations:
-{', '.join([rec.get('name', '') for rec in recommendations[:2]])}
+            Generate a helpful, personalized response. Keep it:
+            - Under 100 words
+            - WhatsApp appropriate with your business personality
+            - Include personalized touches when relevant
+            - If you don't know something, suggest contacting support
 
-Generate a helpful, personalized response. Keep it:
-- Under 200 words
-- WhatsApp appropriate with your business personality
-- Include personalized touches when relevant
-- If you don't know something, suggest contacting support
-
-Response:"""
+            Response:"""
             
-            response = await self._rate_limited_llm_call([HumanMessage(content=prompt)], 
-                                                        estimated_tokens=len(prompt))
+            response = await self._rate_limited_llm_call([HumanMessage(content=prompt)],estimated_tokens=len(prompt))
             return response.content
             
         except Exception as e:
@@ -651,22 +658,22 @@ Response:"""
             
             prompt = f"""Extract order details from this {self._get_business_type_str(business_type)} customer message: "{message}"
 
-Business context: This is a {self._get_business_type_str(business_type)} business.
-Typical product attributes to look for: {', '.join(typical_attributes)}
+            Business context: This is a {self._get_business_type_str(business_type)} business.
+            Typical product attributes to look for: {', '.join(typical_attributes)}
 
-Return a JSON object with:
-- items: array of {{name: string, quantity: number, notes: string, attributes: object}}
-- special_instructions: string
-- estimated_total: number (if mentioned)
-- business_specific_notes: string (any {self._get_business_type_str(business_type)}-specific requirements)
+            Return a JSON object with:
+            - items: array of {{name: string, quantity: number, notes: string, attributes: object}}
+            - special_instructions: string
+            - estimated_total: number (if mentioned)
+            - business_specific_notes: string (any {self._get_business_type_str(business_type)}-specific requirements)
 
-For {self._get_business_type_str(business_type)} businesses, pay special attention to:
-{self._get_business_specific_extraction_notes(business_type)}
+            For {self._get_business_type_str(business_type)} businesses, pay special attention to:
+            {self._get_business_specific_extraction_notes(business_type)}
 
-If you cannot extract clear order details, return null.
+            If you cannot extract clear order details, return null.
 
-Customer message: {message}
-"""
+            Customer message: {message}
+            """
             
             response = await self._rate_limited_llm_call([HumanMessage(content=prompt)], 
                                                         estimated_tokens=len(prompt))

@@ -4,11 +4,12 @@ import logging
 import re
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-from fastapi import APIRouter, Request, Depends, Query, HTTPException
+from fastapi import APIRouter, Request, Depends, Query, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.whatsapp import WhatsAppService
 from app.services.ai_agent import get_ai_agent, Intent
+from app.services.webhook_security import validate_twilio_webhook, add_security_headers
 from app.config import get_settings
 
 SETTINGS = get_settings()
@@ -43,36 +44,45 @@ async def verify_webhook(
     raise HTTPException(status_code=403, detail="Verification failed")
 
 @router.post("/webhook")
-async def process_webhook(request: Request, db: Session = Depends(get_db)):
+async def process_webhook(
+    background_tasks: BackgroundTasks,
+    webhook_data: Dict[str, Any] = Depends(validate_twilio_webhook)
+):
     """
     Process incoming webhook events from WhatsApp (both Meta and Twilio formats)
+    Fast response with background processing
+    Includes Twilio signature validation for security
     """
     try:
-        # Handle both JSON and form data from Twilio
-        content_type = request.headers.get("content-type", "")
+        logger.info(f"Received webhook data: {webhook_data}")
         
-        if "application/json" in content_type:
-            data = await request.json()
-        elif "application/x-www-form-urlencoded" in content_type:
-            # Twilio sends form data
-            form_data = await request.form()
-            data = dict(form_data)
-        else:
-            # Try JSON first, then form data as fallback
-            try:
-                data = await request.json()
-            except:
-                form_data = await request.form()
-                data = dict(form_data)
+        # IMMEDIATE RESPONSE - Add to background processing
+        background_tasks.add_task(process_webhook_background, webhook_data)
         
-        logger.info(f"Received webhook data: {data}")
+        # Create response with security headers
+        response_data = {"status": "received", "timestamp": datetime.utcnow().isoformat()}
         
-        # Basic webhook validation - check for required fields
+        # Return immediately to prevent Twilio timeout
+        return response_data
+    except Exception as e:
+        logger.error(f"Error processing webhook: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+
+async def process_webhook_background(data: dict):
+    """Process webhook in background - runs after immediate response"""
+    from app.database import SessionLocal
+    
+    db = SessionLocal()
+    try:
+        logger.info(f"Background processing webhook: {data}")
+        
+        # Basic webhook validation
         if not data or (not data.get("MessageSid") and not data.get("object")):
             logger.warning("Invalid webhook payload - missing required fields")
-            return {"success": False, "error": "Invalid webhook payload"}
-        
-        # Initialize WhatsApp service with database for this request
+            return
+
+        # Initialize WhatsApp service with database
         whatsapp_service_with_db = WhatsAppService(db)
         
         # Process the webhook event data
@@ -81,32 +91,37 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
         
         if not event_data:
             logger.warning("No event data extracted from webhook payload")
-            return {"success": True, "message": "Event processed but no action taken"}
+            return
         
         # Handle delivery status updates
         if event_data.get("type") == "status_update":
-            return await handle_message_status_update(event_data, db)
+            await handle_message_status_update(event_data, db)
+            return
         
-        # Handle regular messages  
-        # Get the phone number of the sender
+        # Handle regular messages and button clicks
         phone_number = event_data.get("phone_number")
         if not phone_number:
             logger.warning("No phone number found in event data")
-            return {"success": False, "error": "Missing phone number"}
+            return
         
-        # Look for the customer across all groups first
+        # Check if this is a button click - process it intelligently
+        if event_data.get("type") == "button_click":
+            logger.info(f"Processing button click from {phone_number}")
+            message_content = await handle_button_click(event_data, db, whatsapp_service_with_db)
+        else:
+            message_content = event_data.get("message", "")
+        
+        # Look for customer
         customer = db.query(models.Customer).filter(
             models.Customer.phone_number == phone_number
         ).first()
         
-        # Extract the message and its type
-        message = event_data.get("message", "").strip()
+        # Extract message details - use processed content for button clicks
+        message = message_content if event_data.get("type") == "button_click" else event_data.get("message", "").strip()
         message_type = event_data.get("type")
-        
-        # Extract current group context
         current_group_id = None
         
-        # Check if this is the initial click-to-chat message which contains the group info
+        # Handle group identification and customer creation
         if message_type == "text" and message.startswith("order from group:"):
             group_identifier = message.replace("order from group:", "").strip()
             logger.info(f"Looking for group with identifier: {group_identifier}")
@@ -119,58 +134,65 @@ async def process_webhook(request: Request, db: Session = Depends(get_db)):
             if group:
                 current_group_id = group.id
                 
-                # If customer doesn't exist yet, create them
+                # Create or update customer
                 if not customer:
                     customer = models.Customer(
                         phone_number=phone_number,
                         name=event_data.get("name", "New Customer"),
                         group_id=current_group_id,
-                        active_group_id=current_group_id  # Set active group to current group
+                        active_group_id=current_group_id
                     )
                     db.add(customer)
                     db.commit()
                     db.refresh(customer)
                     logger.info(f"Created new customer with ID {customer.id} for phone {phone_number}")
                 else:
-                    # If customer exists, update their active_group_id
                     customer.active_group_id = current_group_id
                     db.commit()
                     logger.info(f"Updated customer {customer.id} with active_group_id {current_group_id}")
                     
-                # Now we need to reset or create a new conversation session since this is a new interaction
-                # But only if it's not from an existing active conversation
+                # Reset conversation session
                 if customer:
                     session = models.ConversationSession.get_or_create_session(db, customer.id)
-                    # Override the state to INITIAL since this is a new group interaction
                     session.update_state(ConversationState.INITIAL)
                     db.commit()
         
-        # If we still don't have a customer record, we can't proceed
+        # If no customer, send help message
         if not customer:
             logger.warning(f"No customer found and couldn't create one. Sending help message to {phone_number}")
-            # Send a welcome message guiding them to use a proper link
             welcome_msg = "👋 Welcome to our ConvoCart!\n\n"
             welcome_msg += "It seems you're trying to place an order, but we couldn't identify which business you're trying to order from.\n\n"
             welcome_msg += "Please use the link that the business shared with you to start your order properly."
             whatsapp_service_with_db.send_text_message(phone_number, welcome_msg)
-            return {"success": True, "message": "Sent help message to new customer"}
+            return
         
-        # Now handle the customer's message with AI-enhanced conversation context
+        # Process with AI or fallback logic
         if SETTINGS.enable_ai_agent:
-            await handle_customer_message_with_ai_context(customer, event_data, db, current_group_id, whatsapp_service_with_db)
+            try:
+                await handle_customer_message_with_ai_context(
+                    customer, event_data, db, current_group_id, whatsapp_service_with_db
+                )
+            except Exception as ai_error:
+                logger.error(f"AI processing failed: {ai_error}, falling back to basic logic")
+                await handle_customer_message_with_context(
+                    customer, event_data, db, current_group_id, whatsapp_service_with_db
+                )
         else:
-            # Fallback to original logic
-            await handle_customer_message_with_context(customer, event_data, db, current_group_id, whatsapp_service_with_db)
+            await handle_customer_message_with_context(
+                customer, event_data, db, current_group_id, whatsapp_service_with_db
+            )
+            
+        logger.info(f"Background webhook processing completed for {phone_number}")
         
-        return {"success": True, "message": "Webhook processed successfully"}
     except Exception as e:
-        logger.error(f"Error processing webhook: {str(e)}")
-        # Rollback any uncommitted database changes
+        logger.error(f"Error in background webhook processing: {str(e)}")
         try:
             db.rollback()
         except:
             pass
-        return {"success": False, "error": str(e)}
+    finally:
+        db.close()
+
 
 async def handle_customer_message_with_ai_context(customer, event_data, db, current_group_id=None, whatsapp_service=None):
     """
@@ -589,6 +611,19 @@ async def handle_customer_message_with_context(customer, event_data, db, current
             )
             return
     
+    elif current_state == ConversationState.AWAITING_PAYMENT:
+        # User is selecting payment method from the options (1, 2, or 3)
+        if message_type == "text" and message.strip() in ["1", "2", "3"]:
+            await handle_payment_method_selection(phone_number, customer.id, message.strip(), db, whatsapp_service, session)
+            return
+        else:
+            # Invalid selection, resend payment options
+            whatsapp_service.send_text_message(
+                phone_number,
+                "Please select a valid payment option by replying with 1, 2, or 3:\n\n1. Paid with M-Pesa\n2. Pay on Delivery\n3. Cancel Order"
+            )
+            return
+    
     elif current_state == ConversationState.AWAITING_PAYMENT_CONFIRMATION:
         # User is providing payment confirmation
         if is_mpesa_message(message, message_type):
@@ -680,6 +715,10 @@ def is_mpesa_message(message, message_type):
     """Check if message is an M-Pesa confirmation"""
     if message_type != "text":
         return False
+    
+    # Don't treat single digits as M-Pesa messages (these are likely menu selections)
+    if len(message.strip()) <= 2 and message.strip().isdigit():
+        return False
         
     # Comprehensive pattern matching for M-Pesa transaction messages
     return (
@@ -688,7 +727,9 @@ def is_mpesa_message(message, message_type):
         "TRANSACTION" in message.upper() or
         "CONFIRMED" in message.upper() or
         "RECEIVED KSH" in message.upper() or
-        "MPESA" in message.upper()
+        "MPESA" in message.upper() or
+        # Common M-Pesa transaction code patterns (8-10 character alphanumeric)
+        re.search(r'\b[A-Z0-9]{8,10}\b', message.upper())
     )
 
 async def send_welcome_message(phone_number, group, whatsapp_service):
@@ -727,6 +768,70 @@ async def send_help_message(phone_number, group, whatsapp_service):
         help_message += f"Need more help? Contact {group.name} directly at {group.contact_phone}"
     
     whatsapp_service.send_text_message(phone_number, help_message)
+
+async def handle_button_click(event_data: dict, db: Session, whatsapp_service) -> str:
+    """
+    Intelligently handle button clicks by mapping payloads to appropriate responses
+    Returns the processed message content for further handling
+    """
+    try:
+        button_payload = event_data.get("button_payload", "")
+        button_text = event_data.get("button_text", "")
+        phone_number = event_data.get("phone_number", "")
+        
+        logger.info(f"Button click from {phone_number}: payload='{button_payload}', text='{button_text}'")
+        
+        # Smart mapping of button payloads to user intents
+        payload_mapping = {
+            # Order actions
+            "place_order": "place order",
+            "new_order": "place order", 
+            "order_now": "place order",
+            
+            # Order tracking
+            "track_order": "track order",
+            "check_status": "track order",
+            "order_status": "track order",
+            
+            # Payment methods
+            "mpesa_payment": "1",  # Maps to M-Pesa option
+            "pay_with_mpesa": "1",
+            "cash_payment": "2",   # Maps to Cash on Delivery option
+            "pay_on_delivery": "2",
+            "cancel_order": "3",   # Maps to Cancel option
+            
+            # Support and help
+            "contact_support": "contact support",
+            "get_help": "help",
+            "help": "help",
+            
+            # Feedback
+            "feedback_good": "good experience",
+            "feedback_ok": "okay experience", 
+            "feedback_bad": "bad experience"
+        }
+        
+        # Try to map the payload first, then fallback to button text
+        mapped_message = payload_mapping.get(button_payload.lower())
+        
+        if not mapped_message:
+            # Try mapping button text if payload mapping failed
+            for key, value in payload_mapping.items():
+                if key in button_text.lower():
+                    mapped_message = value
+                    break
+        
+        # If no mapping found, use the button text directly
+        if not mapped_message:
+            mapped_message = button_text or button_payload
+        
+        logger.info(f"Button click mapped to message: '{mapped_message}'")
+        return mapped_message
+        
+    except Exception as e:
+        logger.error(f"Error handling button click: {str(e)}")
+        # Fallback to button text or payload
+        return event_data.get("button_text", event_data.get("button_payload", ""))
 
 def send_default_options(phone_number, whatsapp_service):
     """Send default options menu"""
@@ -925,6 +1030,130 @@ async def handle_mpesa_confirmation(phone_number, customer_id, message, db, what
             phone_number,
             "Thank you for the payment information, but we couldn't find a pending order. Please place an order first."
         )
+
+async def handle_payment_method_selection(phone_number: str, customer_id: int, selection: str, db: Session, whatsapp_service: WhatsAppService, session):
+    """Handle payment method selection (1=M-Pesa, 2=Cash on Delivery, 3=Cancel)"""
+    try:
+        # Find the customer's most recent pending order
+        last_order = db.query(models.Order).filter(
+            models.Order.customer_id == customer_id,
+            models.Order.status == models.OrderStatus.PENDING
+        ).order_by(models.Order.created_at.desc()).first()
+        
+        if not last_order:
+            whatsapp_service.send_text_message(
+                phone_number,
+                "Sorry, we couldn't find a pending order. Please place a new order first."
+            )
+            session.update_state(ConversationState.IDLE)
+            db.commit()
+            return
+        
+        # Get group information for payment details
+        group = db.query(models.Group).filter(models.Group.id == last_order.group_id).first()
+        
+        if selection == "1":  # M-Pesa payment
+            # Get payment instructions from group settings
+            payment_instructions = get_mpesa_payment_instructions(group, last_order)
+            whatsapp_service.send_text_message(phone_number, payment_instructions)
+            session.update_state(ConversationState.AWAITING_PAYMENT_CONFIRMATION)
+            db.commit()
+            
+        elif selection == "2":  # Pay on Delivery/Cash
+            # Handle cash on delivery
+            last_order.payment_method = models.PaymentMethod.CASH_ON_DELIVERY
+            db.commit()
+            
+            whatsapp_service.send_payment_confirmation(
+                phone_number,
+                {
+                    "method": "cash",
+                    "order_number": last_order.order_number,
+                    "amount": last_order.total_amount
+                }
+            )
+            session.update_state(ConversationState.IDLE)
+            db.commit()
+            
+        elif selection == "3":  # Cancel Order
+            last_order.status = models.OrderStatus.CANCELLED
+            db.commit()
+            
+            whatsapp_service.send_text_message(
+                phone_number,
+                f"✅ Your order #{last_order.order_number} has been cancelled successfully."
+            )
+            session.update_state(ConversationState.IDLE)
+            db.commit()
+            
+    except Exception as e:
+        logger.error(f"Error handling payment method selection: {str(e)}")
+        whatsapp_service.send_text_message(
+            phone_number,
+            "Sorry, there was an error processing your selection. Please try again."
+        )
+
+def get_mpesa_payment_instructions(group, order) -> str:
+    """Generate M-Pesa payment instructions based on group settings"""
+    try:
+        # Get payment methods from group settings
+        payment_methods = group.payment_methods or {} if group else {}
+        
+        # Prioritize M-Pesa Till over Paybill
+        mpesa_till = payment_methods.get('mpesa_till', {})
+        mpesa_paybill = payment_methods.get('mpesa_paybill', {})
+        
+        if mpesa_till.get('enabled'):
+            # Use M-Pesa Till Number (Buy Goods)
+            instructions = mpesa_till.get('instructions', '')
+            business_name = mpesa_till.get('business_name', group.name if group else 'Our Business')
+            till_number = mpesa_till.get('till_number', '')
+            
+            # Replace placeholders
+            instructions = instructions.replace('{till_number}', till_number)
+            instructions = instructions.replace('{business_name}', business_name)
+            instructions = instructions.replace('{order_number}', order.order_number)
+            if order.total_amount > 0:
+                instructions = instructions.replace('{amount}', f"KSH {order.total_amount:.2f}")
+            
+            return f"💳 *M-PESA PAYMENT INSTRUCTIONS*\n\n{instructions}"
+            
+        elif mpesa_paybill.get('enabled'):
+            # Use M-Pesa Paybill
+            paybill_number = mpesa_paybill.get('paybill_number', '')
+            account_format = mpesa_paybill.get('account_number_format', 'ORDER-{order_number}')
+            business_name = mpesa_paybill.get('business_name', group.name if group else 'Our Business')
+            
+            account_number = account_format.replace('{order_number}', order.order_number)
+            
+            instructions = f"Pay via M-Pesa Paybill:\n"
+            instructions += f"1. Go to M-Pesa menu\n"
+            instructions += f"2. Select Lipa na M-Pesa\n"
+            instructions += f"3. Select Paybill\n"
+            instructions += f"4. Enter Business Number: {paybill_number}\n"
+            instructions += f"5. Enter Account Number: {account_number}\n"
+            if order.total_amount > 0:
+                instructions += f"6. Enter Amount: KSH {order.total_amount:.2f}\n"
+                instructions += f"7. Complete transaction\n"
+                instructions += f"8. Send M-Pesa confirmation message here\n\n"
+            else:
+                instructions += f"6. Enter amount\n"
+                instructions += f"7. Complete transaction\n"
+                instructions += f"8. Send M-Pesa confirmation message here\n\n"
+            instructions += f"Thank you for choosing {business_name}!"
+            
+            return f"💳 *M-PESA PAYMENT INSTRUCTIONS*\n\n{instructions}"
+        
+        # Default fallback instructions if no M-Pesa methods configured
+        return ("💳 *M-PESA PAYMENT INSTRUCTIONS*\n\n"
+               "Please contact our support team for M-Pesa payment details.\n\n"
+               "Once you've made the payment, please send us the M-Pesa confirmation message here.")
+        
+    except Exception as e:
+        logger.error(f"Error generating M-Pesa instructions: {str(e)}")
+        return ("💳 *M-PESA PAYMENT INSTRUCTIONS*\n\n"
+               "Please contact our support team for payment details.\n\n"
+               "Once you've made the payment, please send us the M-Pesa confirmation message here.")
 
 async def create_order(phone_number, customer_id, group_id, message, db, whatsapp_service: WhatsAppService):
     """Create a new order from customer details with improved notifications"""

@@ -855,6 +855,223 @@ class AnalyticsService:
             logger.error(f"Error getting popular products: {str(e)}")
             return []
 
+    def _calculate_prediction_confidence(self, num_orders: int, patterns: Dict[str, Any]) -> float:
+        """Calculate confidence score for purchase predictions (0.0 to 1.0)"""
+        if num_orders < 2:
+            return 0.2  # Low confidence for customers with < 2 orders
+        
+        confidence_factors = []
+        
+        # More orders = higher confidence
+        if num_orders >= 10:
+            confidence_factors.append(0.9)
+        elif num_orders >= 5:
+            confidence_factors.append(0.7)
+        elif num_orders >= 3:
+            confidence_factors.append(0.5)
+        else:
+            confidence_factors.append(0.3)
+        
+        # Regular patterns = higher confidence
+        frequency = patterns.get("purchase_frequency", "occasional")
+        if frequency == "frequent":
+            confidence_factors.append(0.8)
+        elif frequency == "regular":
+            confidence_factors.append(0.6)
+        else:
+            confidence_factors.append(0.4)
+        
+        # Consistent timing patterns = higher confidence
+        if patterns.get("preferred_weekday") is not None and patterns.get("preferred_hour") is not None:
+            confidence_factors.append(0.7)
+        elif patterns.get("preferred_weekday") is not None or patterns.get("preferred_hour") is not None:
+            confidence_factors.append(0.5)
+        else:
+            confidence_factors.append(0.3)
+        
+        # Calculate weighted average
+        confidence = sum(confidence_factors) / len(confidence_factors) if confidence_factors else 0.5
+        return round(min(1.0, max(0.0, confidence)), 3)
+
+    def _get_retention_suggestions(self, days_until_prediction: int) -> List[str]:
+        """Get retention suggestions based on prediction timing"""
+        if days_until_prediction < 0:
+            return ["reactivation_campaign", "special_offer", "check_in_message"]
+        elif days_until_prediction <= 7:
+            return ["gentle_reminder", "new_products_showcase"]
+        elif days_until_prediction <= 14:
+            return ["early_notification", "loyalty_program"]
+        else:
+            return ["stay_connected", "seasonal_updates"]
+
+    def _get_sales_metrics(self, group_id: int, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
+        """Get sales metrics for business insights"""
+        try:
+            orders = self.db.query(Order).filter(
+                and_(
+                    Order.group_id == group_id,
+                    Order.created_at >= start_date,
+                    Order.created_at <= end_date
+                )
+            ).all()
+            
+            total_sales = sum(order.total_amount for order in orders if order.total_amount)
+            total_orders = len(orders)
+            avg_order_value = total_sales / total_orders if total_orders > 0 else 0
+            
+            return {
+                "total_sales": total_sales,
+                "total_orders": total_orders,
+                "average_order_value": avg_order_value,
+                "orders_per_day": total_orders / max(1, (end_date - start_date).days)
+            }
+        except Exception as e:
+            logger.error(f"Error getting sales metrics: {str(e)}")
+            return {}
+
+    def _get_customer_metrics(self, group_id: int, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
+        """Get customer metrics for business insights"""
+        try:
+            # New customers in period
+            new_customers = self.db.query(Customer).filter(
+                and_(
+                    Customer.group_id == group_id,
+                    Customer.created_at >= start_date,
+                    Customer.created_at <= end_date
+                )
+            ).count()
+            
+            # Returning customers
+            returning_customers = self.db.query(
+                distinct(Order.customer_id)
+            ).join(
+                Customer, Order.customer_id == Customer.id
+            ).filter(
+                and_(
+                    Customer.group_id == group_id,
+                    Order.created_at >= start_date,
+                    Order.created_at <= end_date,
+                    Customer.created_at < start_date
+                )
+            ).count()
+            
+            return {
+                "new_customers": new_customers,
+                "returning_customers": returning_customers,
+                "total_active_customers": new_customers + returning_customers
+            }
+        except Exception as e:
+            logger.error(f"Error getting customer metrics: {str(e)}")
+            return {}
+
+    def _get_product_performance(self, group_id: int, start_date: datetime, end_date: datetime) -> Dict[str, Any]:
+        """Get product performance metrics"""
+        try:
+            top_products = self.db.query(
+                Product.id,
+                Product.name,
+                func.sum(OrderItem.quantity).label('total_sold'),
+                func.sum(OrderItem.total_price).label('total_revenue')
+            ).join(
+                OrderItem, Product.id == OrderItem.product_id
+            ).join(
+                Order, OrderItem.order_id == Order.id
+            ).filter(
+                and_(
+                    Product.group_id == group_id,
+                    Order.created_at >= start_date,
+                    Order.created_at <= end_date
+                )
+            ).group_by(Product.id).order_by(
+                desc('total_sold')
+            ).limit(10).all()
+            
+            return {
+                "top_selling_products": [
+                    {
+                        "product_id": p.id,
+                        "name": p.name,
+                        "units_sold": p.total_sold,
+                        "revenue": float(p.total_revenue)
+                    }
+                    for p in top_products
+                ]
+            }
+        except Exception as e:
+            logger.error(f"Error getting product performance: {str(e)}")
+            return {}
+
+    def _get_business_specific_insights(self, group: 'Group', start_date: datetime, end_date: datetime) -> Dict[str, Any]:
+        """Get business-type specific insights"""
+        try:
+            # This can be expanded based on business type
+            return {
+                "business_type": group.business_type.value,
+                "insights": ["Basic analytics implemented", "More insights coming soon"]
+            }
+        except Exception as e:
+            logger.error(f"Error getting business insights: {str(e)}")
+            return {}
+
+    def _generate_business_recommendations(self, group: 'Group', sales_metrics: Dict, customer_metrics: Dict, product_performance: Dict) -> List[str]:
+        """Generate business recommendations based on metrics"""
+        recommendations = []
+        
+        # Sales-based recommendations
+        if sales_metrics.get("average_order_value", 0) < 50:
+            recommendations.append("Consider upselling strategies to increase average order value")
+        
+        # Customer-based recommendations
+        if customer_metrics.get("new_customers", 0) < customer_metrics.get("returning_customers", 0):
+            recommendations.append("Focus on customer acquisition strategies")
+        
+        # Product-based recommendations
+        top_products = product_performance.get("top_selling_products", [])
+        if len(top_products) < 5:
+            recommendations.append("Expand product catalog to increase variety")
+        
+        return recommendations
+
+    def _get_segmentation_recommendations(self, segment_stats: Dict[str, Any]) -> List[str]:
+        """Get recommendations based on customer segmentation"""
+        recommendations = []
+        
+        vip_count = segment_stats.get("vip", {}).get("count", 0)
+        at_risk_count = segment_stats.get("at_risk", {}).get("count", 0)
+        
+        if vip_count > 0:
+            recommendations.append("Maintain VIP customer loyalty with exclusive offers")
+        
+        if at_risk_count > 0:
+            recommendations.append("Implement retention campaigns for at-risk customers")
+        
+        new_count = segment_stats.get("new", {}).get("count", 0)
+        if new_count > 0:
+            recommendations.append("Create onboarding campaigns for new customers")
+        
+        return recommendations
+
+    def _predict_product_demand(self, historical_data: List[Dict], days_ahead: int) -> Dict[str, Any]:
+        """Simple demand prediction based on historical data"""
+        try:
+            if not historical_data or len(historical_data) < 3:
+                return {"prediction": "insufficient_data"}
+            
+            # Simple moving average prediction
+            recent_data = sorted(historical_data, key=lambda x: x["date"])[-7:]  # Last 7 days
+            avg_daily_demand = sum(item["quantity"] for item in recent_data) / len(recent_data)
+            
+            predicted_demand = avg_daily_demand * days_ahead
+            
+            return {
+                "predicted_demand": round(predicted_demand, 2),
+                "confidence": "medium" if len(historical_data) >= 14 else "low",
+                "method": "moving_average"
+            }
+        except Exception as e:
+            logger.error(f"Error predicting demand: {str(e)}")
+            return {"prediction": "error"}
+
 
 def get_analytics_service(db: Session) -> AnalyticsService:
     """Get analytics service instance"""

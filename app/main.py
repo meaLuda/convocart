@@ -15,32 +15,34 @@ from pathlib import Path
 import uvicorn
 import uuid
 from app.database import SessionLocal, engine, Base, get_db
-# from app.routers import users, webhook, data_import
+from app.routers import users, webhook, data_import, cart_recovery
 from app.config import Settings, get_settings
 from app import models
-from app.config import get_settings
 from contextlib import asynccontextmanager
+from app.routers.admin import admin_router
+from app.routers.users import NotAuthenticatedException
 
-from app.routers import users, webhook, data_import
+# Import security middleware
+from app.middleware import (
+    SecurityHeadersMiddleware,
+    HTTPSRedirectMiddleware,
+    RateLimitingMiddleware,
+    RequestLoggingMiddleware,
+    SessionCleanupMiddleware
+)
 
 settings = get_settings()
 
 def validate_required_settings():
-    """Validate that all required settings are present"""
-    required_fields = ['twilio_account_sid', 'twilio_auth_token', 'twilio_whatsapp_number']
-    missing_fields = []
+    """Validate that all required settings are present and secure"""
+    from app.utils.config_validator import validate_config_on_startup
     
-    for field in required_fields:
-        if not getattr(settings, field, None):
-            missing_fields.append(field.upper())
-    
-    if missing_fields:
-        logger.error(f"Missing required environment variables: {', '.join(missing_fields)}")
-        logger.error("Please set these variables in your .env file or environment")
+    try:
+        # Use comprehensive config validator
+        return validate_config_on_startup()
+    except RuntimeError as e:
+        logger.error(f"Configuration validation failed: {str(e)}")
         return False
-    
-    logger.info("✅ All required Twilio configuration validated")
-    return True
 
 # Configure logging
 logging.basicConfig(
@@ -54,13 +56,37 @@ from passlib.context import CryptContext
 # Suppress the noisy bcrypt version warning
 logging.getLogger("passlib.handlers.bcrypt").setLevel(logging.ERROR)
 
+# Create password context with bcrypt
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def get_password_hash(password):
+    """Hash a password for storing"""
+    return pwd_context.hash(password)
+
 
 # Add this before creating the FastAPI app
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    logger.info("🚀 Starting ConvoCart application...")
+    
+    # Validate required settings
+    if not validate_required_settings():
+        logger.error("❌ Required settings validation failed. Application startup aborted.")
+        raise RuntimeError("Missing required configuration")
+    
+    # Initialize database
     Base.metadata.create_all(bind=engine)
     logger.info(f"Debug: {settings.debug}")
+
+    # Initialize Redis cache service
+    try:
+        from app.services.cache_service import get_cache_service
+        cache_service = await get_cache_service()
+        logger.info("✅ Cache service initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize cache service: {str(e)}")
+        logger.warning("Application will continue without Redis caching")
 
     # Create default admin user if not exists
     db = SessionLocal()
@@ -95,13 +121,25 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     
+    logger.info("✅ ConvoCart application startup complete")
+    
     yield
-    # Shutdown (if needed)
+    
+    # Shutdown
+    logger.info("🛑 Shutting down ConvoCart application...")
+    
+    # Gracefully close Redis connection
+    try:
+        from app.services.cache_service import _cache_service
+        if _cache_service and _cache_service.redis:
+            await _cache_service.disconnect()
+            logger.info("✅ Redis connection closed")
+    except Exception as e:
+        logger.error(f"Error closing Redis connection: {str(e)}")
+    
+    logger.info("✅ ConvoCart application shutdown complete")
     
     
-# Create password context with bcrypt
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 app = FastAPI(
     title="ConvoCart",
     description="A simple ordering bot for WhatsApp Business API",
@@ -109,13 +147,28 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-origins = ["*"]
+# Configure CORS origins from settings
+origins = settings.cors_origins if hasattr(settings, 'cors_origins') else ["*"]
 
+# Add security middleware (order matters - HTTPS redirect should be first)
+app.add_middleware(HTTPSRedirectMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(SessionCleanupMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
+
+# Rate limiting middleware (configurable)
+if settings.environment == "production":
+    app.add_middleware(RateLimitingMiddleware, requests_per_minute=60)
+else:
+    # More lenient rate limiting for development
+    app.add_middleware(RateLimitingMiddleware, requests_per_minute=120)
+
+# CORS middleware (should be after security middleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=settings.cors_allow_credentials if hasattr(settings, 'cors_allow_credentials') else True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -133,22 +186,39 @@ csrf = CsrfProtect()
 # CSRF Error Handler
 @app.exception_handler(CsrfProtectError)
 def csrf_protect_exception_handler(request: Request, exc: CsrfProtectError):
-    return {"detail": "CSRF token verification failed"}
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=403,
+        content={"detail": "CSRF token verification failed"}
+    )
+
+# Authentication Error Handler
+@app.exception_handler(NotAuthenticatedException)
+async def auth_exception_handler(request: Request, exc: NotAuthenticatedException):
+    """Handle authentication failures by redirecting to login"""
+    from starlette.responses import RedirectResponse
+    return RedirectResponse(url="/admin/login", status_code=303)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 # # Include routers
+app.include_router(users.router, tags=["users"])
 app.include_router(webhook.router, tags=["webhook"])
-app.include_router(users.router, tags=["admin"])
+app.include_router(admin_router, tags=["admin"])
 app.include_router(data_import.router, tags=["data-import"])
+app.include_router(cart_recovery.router, tags=["cart-recovery"])
+
+# Include DataTables API router
+from app.routers.api_datatables import router as datatables_router
+app.include_router(datatables_router, tags=["datatables-api"])
+
+# Include Health Check router
+from app.routers.health import router as health_router
+app.include_router(health_router, tags=["health"])
 
 # Import shared templates configuration
 from app.templates_config import templates
-
-def get_password_hash(password):
-    """Hash a password for storing"""
-    return pwd_context.hash(password)
 
 # Error handlers
 @app.exception_handler(404)

@@ -10,11 +10,29 @@ tw_watch:
 tw_minify:
 	@npm run build
 
-run_app:
-	uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
-	@echo "Starting application..."
+run_app: tw_minify
+	@echo "Starting FastAPI server..."
 	@echo "Visit http://localhost:8080 to access the application"
-	@echo "Application running at http://localhost:$(PORT)"
+	uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+
+run_celery:
+	@echo "Starting Celery worker for cart recovery..."
+	uv run celery -A app.services.cart_recovery_scheduler worker --loglevel=info
+
+run_both: tw_minify
+	@echo "Starting FastAPI and Celery worker..."
+	@echo "Visit http://localhost:8080 to access the application"
+	@echo "Press Ctrl+C to stop both services"
+	@trap 'echo "Stopping services..."; pkill -f "uvicorn app.main"; pkill -f "celery.*cart_recovery_scheduler"; exit 0' INT TERM; \
+	uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload & \
+	uv run celery -A app.services.cart_recovery_scheduler worker --loglevel=info & \
+	wait
+
+stop_app:
+	@echo "Stopping FastAPI and Celery services..."
+	-pkill -f "uvicorn app.main"
+	-pkill -f "celery.*cart_recovery_scheduler"
+	@echo "Services stopped"
 
 # Docker Commands
 build:

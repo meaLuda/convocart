@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}Abandoned Carts | ConvoCart{% endblock %}
+
+{% block page_title %}Abandoned Carts{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow-md p-6 mb-6">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Abandoned Carts</h1>
+        
+        <div class="flex space-x-2">
+            <a href="/admin/cart-recovery/analytics" class="btn btn-outline">
+                <i class="fas fa-chart-bar mr-2"></i>
+                Analytics
+            </a>
+            <a href="/admin/cart-recovery/configuration" class="btn btn-outline">
+                <i class="fas fa-cog mr-2"></i>
+                Settings
+            </a>
+        </div>
+    </div>
+    
+    {% if abandoned_carts %}
+    <div class="table-container">
+        <table class="w-full border-collapse">
+            <thead>
+                <tr class="bg-gray-100">
+                    <th class="border p-2 text-left">Customer</th>
+                    <th class="border p-2 text-left">Cart Items</th>
+                    <th class="border p-2 text-left">Estimated Value</th>
+                    <th class="border p-2 text-left">Abandoned</th>
+                    <th class="border p-2 text-left">Recovery Attempts</th>
+                    <th class="border p-2 text-left">Reason</th>
+                    <th class="border p-2 text-left">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cart in abandoned_carts %}
+                <tr class="hover:bg-gray-50">
+                    <td class="border p-2">
+                        <div class="font-medium">{{ cart.customer.name or cart.customer.phone_number }}</div>
+                        <div class="text-sm text-gray-500">{{ cart.customer.phone_number }}</div>
+                    </td>
+                    <td class="border p-2">
+                        {% if cart.cart_data and cart.cart_data.items %}
+                            <div class="text-sm">
+                                {% set items = cart.cart_data.items[:3] %}
+                                {% for item in items %}
+                                    <div>{{ item.name }} ({{ item.quantity }})</div>
+                                {% endfor %}
+                                {% if cart.cart_data.items|length > 3 %}
+                                    <div class="text-gray-500">+{{ cart.cart_data.items|length - 3 }} more...</div>
+                                {% endif %}
+                            </div>
+                        {% else %}
+                            <span class="text-gray-500">{{ cart.items_count or 0 }} items</span>
+                        {% endif %}
+                    </td>
+                    <td class="border p-2">
+                        {% if cart.estimated_total %}
+                            <span class="font-medium">KSh {{ "{:,.2f}".format(cart.estimated_total) }}</span>
+                        {% else %}
+                            <span class="text-gray-500">N/A</span>
+                        {% endif %}
+                    </td>
+                    <td class="border p-2">
+                        {% if cart.abandoned_at %}
+                            <div class="text-sm">{{ cart.abandoned_at.strftime('%b %d, %Y') }}</div>
+                            <div class="text-xs text-gray-500">{{ cart.abandoned_at.strftime('%I:%M %p') }}</div>
+                        {% else %}
+                            <span class="text-gray-500">Unknown</span>
+                        {% endif %}
+                    </td>
+                    <td class="border p-2 text-center">
+                        <span class="badge {% if cart.recovery_attempts == 0 %}badge-gray{% elif cart.recovery_attempts < 3 %}badge-yellow{% else %}badge-red{% endif %}">
+                            {{ cart.recovery_attempts }}
+                        </span>
+                    </td>
+                    <td class="border p-2">
+                        {% if cart.abandonment_reason %}
+                            <span class="badge badge-gray">{{ cart.abandonment_reason.value.replace('_', ' ').title() }}</span>
+                        {% else %}
+                            <span class="text-gray-500">Unknown</span>
+                        {% endif %}
+                    </td>
+                    <td class="border p-2">
+                        <div class="flex space-x-1">
+                            {% if cart.recovery_attempts < 3 and cart.is_eligible_for_recovery() %}
+                            <button 
+                                hx-post="/admin/cart-recovery/trigger-recovery/{{ cart.id }}"
+                                hx-confirm="Send recovery message to {{ cart.customer.name or cart.customer.phone_number }}?"
+                                hx-target="closest tr"
+                                hx-swap="outerHTML"
+                                class="btn btn-sm btn-primary">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                            {% endif %}
+                            <button 
+                                onclick="viewCartDetails({{ cart.id }})"
+                                class="btn btn-sm btn-outline">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="text-center py-8">
+        <i class="fas fa-shopping-cart text-4xl text-gray-300 mb-4"></i>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">No Abandoned Carts</h3>
+        <p class="text-gray-500">No abandoned carts found. This is great news!</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Cart Details Modal -->
+<div id="cartModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50" onclick="closeCartModal()">
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <div class="bg-white rounded-lg max-w-2xl w-full max-h-90vh overflow-y-auto" onclick="event.stopPropagation()">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold">Cart Details</h2>
+                    <button onclick="closeCartModal()" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div id="cartModalContent">
+                    <!-- Dynamic content will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function viewCartDetails(cartId) {
+    fetch(`/admin/cart-recovery/cart-details/${cartId}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('cartModalContent').innerHTML = `
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="font-medium text-gray-900">Customer Information</h3>
+                        <p class="text-gray-600">${data.customer_name || data.customer_phone}</p>
+                        <p class="text-sm text-gray-500">${data.customer_phone}</p>
+                    </div>
+                    
+                    <div>
+                        <h3 class="font-medium text-gray-900">Cart Contents</h3>
+                        <div class="bg-gray-50 rounded p-3">
+                            ${data.cart_items ? data.cart_items.map(item => `
+                                <div class="flex justify-between py-1">
+                                    <span>${item.name}</span>
+                                    <span>Qty: ${item.quantity}</span>
+                                </div>
+                            `).join('') : '<p class="text-gray-500">No detailed cart data available</p>'}
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <h3 class="font-medium text-gray-900">Abandonment Details</h3>
+                            <p class="text-sm text-gray-600">Reason: ${data.abandonment_reason || 'Unknown'}</p>
+                            <p class="text-sm text-gray-600">Abandoned: ${data.abandoned_at || 'Unknown'}</p>
+                        </div>
+                        <div>
+                            <h3 class="font-medium text-gray-900">Recovery Stats</h3>
+                            <p class="text-sm text-gray-600">Attempts: ${data.recovery_attempts}</p>
+                            <p class="text-sm text-gray-600">Last attempt: ${data.last_recovery_message_at || 'Never'}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('cartModal').classList.remove('hidden');
+        })
+        .catch(error => {
+            console.error('Error loading cart details:', error);
+            alert('Failed to load cart details');
+        });
+}
+
+function closeCartModal() {
+    document.getElementById('cartModal').classList.add('hidden');
+}
+</script>
+{% endblock %}

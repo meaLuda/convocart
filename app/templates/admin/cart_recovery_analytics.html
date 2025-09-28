@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+
+{% block title %}Cart Recovery Analytics - ConvoCart Admin{% endblock %}
+
+{% block page_title %}Cart Recovery Analytics{% endblock %}
+
+{% block content %}
+    <!-- Page Header -->
+    <div class="relative bg-gradient-to-br from-primary-500 via-primary-600 to-secondary-600 rounded-3xl p-8 mb-8 text-white overflow-hidden">
+        <!-- Background Pattern -->
+        <div class="absolute inset-0 opacity-10">
+            <div class="absolute top-0 right-0 w-96 h-96 bg-white rounded-full transform translate-x-32 -translate-y-32"></div>
+            <div class="absolute bottom-0 left-0 w-64 h-64 bg-white rounded-full transform -translate-x-16 translate-y-16"></div>
+        </div>
+        
+        <div class="relative flex flex-col lg:flex-row items-start lg:items-center justify-between">
+            <div class="flex-1">
+                <div class="flex items-center mb-3">
+                    <div class="w-16 h-16 bg-white bg-opacity-20 rounded-2xl flex items-center justify-center text-2xl mr-4">
+                        <i class="fas fa-chart-line text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-3xl font-bold">Cart Recovery Analytics</h1>
+                        <p class="text-primary-100 mt-1">
+                            Monitor and optimize your cart abandonment recovery performance
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="flex flex-wrap items-center gap-4 text-sm text-primary-100">
+                    <div class="flex items-center">
+                        <i class="fas fa-calendar mr-2"></i>
+                        {{ report.report_period }}
+                    </div>
+                    <div class="flex items-center">
+                        <i class="fas fa-clock mr-2"></i>
+                        Generated at {{ report.generated_at[:19] if report.generated_at else 'now' }}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-6 lg:mt-0 flex flex-col sm:flex-row gap-3">
+                <a href="/admin/cart-recovery/abandoned-carts" class="btn bg-white text-primary-600 hover:bg-primary-50">
+                    <i class="fas fa-list mr-2"></i>
+                    View Abandoned Carts
+                </a>
+                <a href="/admin/cart-recovery/configuration" class="btn bg-primary-700 hover:bg-primary-800 text-white">
+                    <i class="fas fa-cog mr-2"></i>
+                    Configure Settings
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Overview using your existing stat-card pattern -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <!-- Abandonment Rate Card -->
+        <div class="stat-card group cursor-pointer">
+            <div class="flex items-center justify-between mb-4">
+                <div class="stat-icon stat-icon-warning">
+                    <i class="fas fa-shopping-cart"></i>
+                </div>
+                <div class="text-right">
+                    <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Abandonment Rate</span>
+                    <div class="text-2xl font-bold text-warning-600 mt-1">{{ report.overview.abandonment_rate }}%</div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-sm text-gray-500">{{ report.overview.abandoned_sessions }} abandoned</span>
+                {% if report.overview.abandonment_rate > 70 %}
+                <div class="flex items-center text-error-600">
+                    <i class="fas fa-exclamation-triangle text-xs mr-1"></i>
+                    <span class="text-sm font-medium">High</span>
+                </div>
+                {% elif report.overview.abandonment_rate > 50 %}
+                <div class="flex items-center text-warning-600">
+                    <i class="fas fa-minus text-xs mr-1"></i>
+                    <span class="text-sm font-medium">Moderate</span>
+                </div>
+                {% else %}
+                <div class="flex items-center text-success-600">
+                    <i class="fas fa-check text-xs mr-1"></i>
+                    <span class="text-sm font-medium">Good</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recovery Rate Card -->
+        <div class="stat-card group cursor-pointer">
+            <div class="flex items-center justify-between mb-4">
+                <div class="stat-icon stat-icon-success">
+                    <i class="fas fa-undo"></i>
+                </div>
+                <div class="text-right">
+                    <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Recovery Rate</span>
+                    <div class="text-2xl font-bold text-success-600 mt-1">{{ report.overview.recovery_rate }}%</div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-sm text-gray-500">{{ report.overview.recovered_sessions }} recovered</span>
+                {% if report.overview.recovery_rate > 30 %}
+                <div class="flex items-center text-success-600">
+                    <i class="fas fa-arrow-up text-xs mr-1"></i>
+                    <span class="text-sm font-medium">Excellent</span>
+                </div>
+                {% elif report.overview.recovery_rate > 15 %}
+                <div class="flex items-center text-warning-600">
+                    <i class="fas fa-minus text-xs mr-1"></i>
+                    <span class="text-sm font-medium">Good</span>
+                </div>
+                {% else %}
+                <div class="flex items-center text-error-600">
+                    <i class="fas fa-arrow-down text-xs mr-1"></i>
+                    <span class="text-sm font-medium">Needs attention</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Revenue Recovered Card -->
+        <div class="stat-card group cursor-pointer">
+            <div class="flex items-center justify-between mb-4">
+                <div class="stat-icon stat-icon-primary">
+                    <i class="fas fa-dollar-sign"></i>
+                </div>
+                <div class="text-right">
+                    <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Revenue Recovered</span>
+                    <div class="text-2xl font-bold text-primary-600 mt-1">${{ "%.2f"|format(report.overview.recovered_value) }}</div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-sm text-gray-500">{{ report.overview.recovery_revenue_rate }}% of abandoned</span>
+                <div class="flex items-center text-primary-600">
+                    <i class="fas fa-chart-line text-xs mr-1"></i>
+                    <span class="text-sm font-medium">Revenue</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Campaigns Sent Card -->
+        <div class="stat-card group cursor-pointer">
+            <div class="flex items-center justify-between mb-4">
+                <div class="stat-icon stat-icon-secondary">
+                    <i class="fas fa-envelope"></i>
+                </div>
+                <div class="text-right">
+                    <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Campaigns Sent</span>
+                    <div class="text-2xl font-bold text-secondary-600 mt-1">{{ report.campaign_performance.total_campaigns_sent }}</div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between">
+                <span class="text-sm text-gray-500">{{ report.campaign_performance.overall_success_rate }}% success</span>
+                <div class="flex items-center text-secondary-600">
+                    <i class="fas fa-paper-plane text-xs mr-1"></i>
+                    <span class="text-sm font-medium">Messages</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Insights using your card pattern -->
+    <div class="card mb-8">
+        <h2 class="text-2xl font-bold text-gray-800 mb-4">
+            <i class="fas fa-lightbulb text-warning-500 mr-2"></i>
+            AI Insights & Recommendations
+        </h2>
+        {% if report.insights_and_recommendations %}
+            <div class="space-y-3">
+                {% for insight in report.insights_and_recommendations %}
+                <div class="flex items-start">
+                    <div class="flex-shrink-0 w-2 h-2 bg-primary-500 rounded-full mt-2 mr-3"></div>
+                    <span class="text-gray-700">{{ insight }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="text-center py-8">
+                <i class="fas fa-chart-line text-4xl text-gray-300 mb-4"></i>
+                <p class="text-gray-500">Collecting data for AI insights...</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Performance Charts Row using your card pattern -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <!-- Abandonment Reasons -->
+        <div class="card">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-bold text-gray-800">Top Abandonment Reasons</h3>
+                <div class="w-8 h-8 bg-warning-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-exclamation-triangle text-warning-600 text-sm"></i>
+                </div>
+            </div>
+            {% if report.abandonment_reasons %}
+                <div class="space-y-4">
+                    {% for reason in report.abandonment_reasons[:5] %}
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <div class="w-3 h-3 bg-warning-400 rounded-full mr-3"></div>
+                            <span class="text-sm font-medium text-gray-700">{{ reason.reason|replace('_', ' ')|title }}</span>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-sm font-bold text-gray-900">{{ reason.count }}</span>
+                            <span class="text-xs text-gray-500 ml-1">({{ reason.percentage }}%)</span>
+                        </div>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div class="bg-gradient-to-r from-warning-400 to-warning-500 h-2 rounded-full" 
+                             style="width: {{ reason.percentage }}%"></div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="text-center py-8">
+                    <i class="fas fa-info-circle text-4xl text-gray-300 mb-4"></i>
+                    <p class="text-gray-500">No abandonment data available</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Campaign Performance -->
+        <div class="card">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-bold text-gray-800">Campaign Performance</h3>
+                <div class="w-8 h-8 bg-success-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-paper-plane text-success-600 text-sm"></i>
+                </div>
+            </div>
+            {% if report.campaign_performance.campaign_stats %}
+                <div class="space-y-4">
+                    {% for campaign in report.campaign_performance.campaign_stats %}
+                    <div class="border-l-4 border-primary-500 pl-4 py-2">
+                        <div class="flex justify-between items-center">
+                            <h4 class="text-sm font-bold text-gray-900">{{ campaign.campaign_type|replace('_', ' ')|title }}</h4>
+                            <span class="badge badge-{{ 'completed' if campaign.success_rate > 25 else 'pending' }}">
+                                {{ campaign.success_rate }}% success
+                            </span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            {{ campaign.total_sent }} sent • {{ campaign.successful_recoveries }} recovered
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                            <div class="bg-gradient-to-r from-success-400 to-success-500 h-2 rounded-full" 
+                                 style="width: {{ campaign.success_rate }}%"></div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="text-center py-8">
+                    <i class="fas fa-envelope text-4xl text-gray-300 mb-4"></i>
+                    <p class="text-gray-500">No campaign data available</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Customer Segments using your table pattern -->
+    {% if report.customer_segments %}
+    <div class="card mb-8">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-1">Performance by Customer Segment</h2>
+                <p class="text-gray-500 text-sm">How different customer types interact with cart recovery</p>
+            </div>
+            <div class="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center">
+                <i class="fas fa-users text-primary-600 text-sm"></i>
+            </div>
+        </div>
+        
+        <div class="table-container">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Customer Segment</th>
+                        <th>Total Sessions</th>
+                        <th>Abandoned</th>
+                        <th>Abandonment Rate</th>
+                        <th>Recovery Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for segment in report.customer_segments %}
+                    <tr class="table-row-hover">
+                        <td class="font-medium text-gray-900">
+                            <div class="flex items-center">
+                                <div class="w-3 h-3 bg-primary-400 rounded-full mr-3"></div>
+                                {{ segment.segment|replace('_', ' ')|title }}
+                            </div>
+                        </td>
+                        <td>{{ segment.total_sessions }}</td>
+                        <td>{{ segment.abandoned_sessions }}</td>
+                        <td>
+                            <span class="badge {% if segment.abandonment_rate > 70 %}badge-cancelled{% elif segment.abandonment_rate > 50 %}badge-pending{% else %}badge-completed{% endif %}">
+                                {{ segment.abandonment_rate }}%
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge {% if segment.recovery_rate > 30 %}badge-completed{% elif segment.recovery_rate > 15 %}badge-pending{% else %}badge-cancelled{% endif %}">
+                                {{ segment.recovery_rate }}%
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Cart Recovery Analytics loaded');
+    
+    // Add hover effects for stat cards
+    document.querySelectorAll('.stat-card').forEach(card => {
+        card.addEventListener('click', function() {
+            // Add click interaction if needed
+            console.log('Stat card clicked:', this);
+        });
+    });
+});
+</script>
+{% endblock %}

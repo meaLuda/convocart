@@ -282,8 +282,8 @@ class MessageDeliveryStatus(Base):
     id = Column(Integer, primary_key=True, index=True)
     message_id = Column(String(255), unique=True, index=True, nullable=False)  # WhatsApp message ID
     recipient_phone = Column(String(25), nullable=False)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
-    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True, index=True)
     
     # Message details
     message_type = Column(String(50), nullable=True)  # text, interactive, etc.
@@ -428,13 +428,14 @@ class ConversationSession(Base):
     __tablename__ = "conversation_sessions"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
     current_state = Column(Enum(ConversationState), default=ConversationState.INITIAL)
     context_data = Column(
         JsonGettable, nullable=True
     )  # Stores JSON data related to current conversation
     last_interaction = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
+    cart_session_id = Column(Integer, ForeignKey("cart_sessions.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -442,6 +443,7 @@ class ConversationSession(Base):
 
     # Relationships
     customer = relationship("Customer", back_populates="conversation_sessions")
+    cart_session = relationship("CartSession", foreign_keys=[cart_session_id], back_populates="conversation_session")
 
     def update_state(self, new_state, context=None):
         """
@@ -631,7 +633,7 @@ class InventoryLog(Base, TimestampMixin):
     # Context
     reason = Column(String(200), nullable=True)  # Reason for change
     reference_id = Column(String(100), nullable=True)  # Order ID, supplier invoice, etc.
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     
     # Cost tracking
     unit_cost = Column(Float, nullable=True)
@@ -786,5 +788,150 @@ class MediaAttachment(Base, TimestampMixin):
     
     def __repr__(self):
         return f"<MediaAttachment(media_sid='{self.media_sid}', type='{self.media_type}', filename='{self.filename}')>"
+
+
+# Cart Recovery System Models
+class CartStatus(enum.Enum):
+    ACTIVE = "active"
+    ABANDONED = "abandoned"
+    RECOVERED = "recovered"
+    EXPIRED = "expired"
+    COMPLETED = "completed"
+
+
+class AbandonmentReason(enum.Enum):
+    PAYMENT_HESITATION = "payment_hesitation"
+    PRICING_CONCERN = "pricing_concern"
+    DELIVERY_ISSUE = "delivery_issue"
+    PRODUCT_UNAVAILABLE = "product_unavailable"
+    CUSTOMER_DISTRACTION = "customer_distraction"
+    TECHNICAL_ISSUE = "technical_issue"
+    UNKNOWN = "unknown"
+
+
+class RecoveryStatus(enum.Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    SUCCESSFUL = "successful"
+    FAILED = "failed"
+    EXHAUSTED = "exhausted"
+
+
+class CartSession(Base, TimestampMixin):
+    """Track cart sessions for abandonment detection"""
+    __tablename__ = "cart_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    conversation_session_id = Column(Integer, ForeignKey("conversation_sessions.id"), nullable=True, index=True)
+    
+    # Cart details
+    cart_data = Column(JsonGettable, nullable=True)  # Store extracted order items
+    estimated_total = Column(Float, default=0.0)
+    items_count = Column(Integer, default=0)
+    
+    # Status tracking
+    status = Column(Enum(CartStatus), default=CartStatus.ACTIVE, nullable=False)
+    abandoned_at = Column(DateTime, nullable=True)
+    last_interaction_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Recovery tracking
+    recovery_attempts = Column(Integer, default=0, nullable=False)
+    last_recovery_message_at = Column(DateTime, nullable=True)
+    recovered_at = Column(DateTime, nullable=True)
+    completed_order_id = Column(Integer, ForeignKey("orders.id"), nullable=True, index=True)
+    
+    # AI insights
+    abandonment_reason = Column(Enum(AbandonmentReason), nullable=True)
+    customer_sentiment = Column(String(50), nullable=True)  # positive, neutral, negative
+    ai_predicted_recovery_probability = Column(Float, nullable=True)  # 0.0 to 1.0
+    
+    # Relationships
+    customer = relationship("Customer", backref="cart_sessions")
+    group = relationship("Group", backref="cart_sessions")
+    conversation_session = relationship("ConversationSession", foreign_keys="ConversationSession.cart_session_id", back_populates="cart_session")
+    completed_order = relationship("Order", backref="originating_cart_session")
+    recovery_campaigns = relationship("CartRecoveryCampaign", back_populates="cart_session")
+
+    def mark_abandoned(self, reason: AbandonmentReason = AbandonmentReason.UNKNOWN):
+        """Mark cart as abandoned"""
+        self.status = CartStatus.ABANDONED
+        self.abandoned_at = datetime.utcnow()
+        self.abandonment_reason = reason
+
+    def is_eligible_for_recovery(self) -> bool:
+        """Check if cart is eligible for recovery attempts"""
+        if self.status != CartStatus.ABANDONED:
+            return False
+        if self.recovery_attempts >= 3:  # Max 3 recovery attempts
+            return False
+        if self.last_recovery_message_at:
+            # Wait at least 2 hours between recovery attempts
+            time_since_last = datetime.utcnow() - self.last_recovery_message_at
+            if time_since_last < timedelta(hours=2):
+                return False
+        return True
+
+
+class CartRecoveryCampaign(Base, TimestampMixin):
+    """Track individual recovery campaign attempts"""
+    __tablename__ = "cart_recovery_campaigns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cart_session_id = Column(Integer, ForeignKey("cart_sessions.id"), nullable=False, index=True)
+    campaign_type = Column(String(50), nullable=False)  # immediate, gentle_reminder, urgent, final_call
+    
+    # Campaign details
+    message_sent_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    message_content = Column(Text, nullable=True)
+    whatsapp_message_id = Column(String(255), nullable=True)
+    
+    # AI personalization
+    ai_personalization_data = Column(JsonGettable, nullable=True)
+    incentive_offered = Column(JsonGettable, nullable=True)  # discount, free_shipping, etc.
+    
+    # Response tracking
+    customer_responded_at = Column(DateTime, nullable=True)
+    customer_response = Column(Text, nullable=True)
+    resulted_in_recovery = Column(Boolean, default=False)
+    status = Column(Enum(RecoveryStatus), default=RecoveryStatus.PENDING, nullable=False)
+    
+    # Performance metrics
+    message_delivered = Column(Boolean, default=False)
+    message_read = Column(Boolean, default=False)
+    
+    # Relationships
+    cart_session = relationship("CartSession", back_populates="recovery_campaigns")
+
+
+class AbandonmentAnalytics(Base, TimestampMixin):
+    """Analytics for cart abandonment patterns"""
+    __tablename__ = "abandonment_analytics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    analysis_period_start = Column(DateTime, nullable=False)
+    analysis_period_end = Column(DateTime, nullable=False)
+    
+    # Abandonment metrics
+    total_cart_sessions = Column(Integer, default=0)
+    abandoned_sessions = Column(Integer, default=0)
+    abandonment_rate = Column(Float, default=0.0)  # percentage
+    
+    # Recovery metrics
+    recovery_attempts = Column(Integer, default=0)
+    successful_recoveries = Column(Integer, default=0)
+    recovery_rate = Column(Float, default=0.0)  # percentage
+    revenue_recovered = Column(Float, default=0.0)
+    
+    # Detailed insights
+    top_abandonment_reasons = Column(JsonGettable, nullable=True)
+    abandonment_by_time_of_day = Column(JsonGettable, nullable=True)
+    most_effective_recovery_messages = Column(JsonGettable, nullable=True)
+    customer_segment_performance = Column(JsonGettable, nullable=True)
+    
+    # Relationships
+    group = relationship("Group", backref="abandonment_analytics")
 
 

@@ -38,7 +38,14 @@
                     </div>
                     <div class="flex items-center">
                         <i class="fas fa-calendar mr-2"></i>
-                        Today: {{ moment().strftime('%B %d, %Y') if moment else 'Dashboard Active' }}
+                        <script>
+                            document.write('Today: ' + new Date().toLocaleDateString('en-US', { 
+                                year: 'numeric', 
+                                month: 'long', 
+                                day: 'numeric' 
+                            }));
+                        </script>
+                        <noscript>Dashboard Active</noscript>
                     </div>
                 </div>
             </div>
@@ -79,7 +86,7 @@
 
         {% if orders %}
         <div class="table-container">
-            <table class="table">
+            <table id="dashboard-orders-table" class="table">
                 <thead>
                     <tr>
                         <th>Order Details</th>
@@ -162,7 +169,7 @@
                             {% endif %}
                         </td>
                         <td>
-                            <div class="font-semibold text-gray-900">Ksh {{ "%.2f"|format(order.total_amount) }}</div>
+                            <div class="font-semibold text-gray-900">{{ currency }} {{ "%.2f"|format(order.total_amount) }}</div>
                         </td>
                         <td>
                             <div class="text-sm text-gray-900">{{ order.created_at.strftime('%b %d') }}</div>
@@ -314,4 +321,40 @@
     </div>
     {% endif %}
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // Initialize DataTables for Dashboard Orders (client-side, limited data)
+    if ($('#dashboard-orders-table').length) {
+        $('#dashboard-orders-table').DataTable({
+            responsive: true,
+            pageLength: 10,
+            lengthMenu: [[5, 10, 25], [5, 10, 25]],
+            dom: 'ftip', // Remove buttons for dashboard
+            order: [[{% if admin.role.value == 'super_admin' %}6{% else %}5{% endif %}, 'desc']], // Sort by date
+            language: {
+                search: 'Search recent orders:',
+                lengthMenu: 'Show _MENU_ orders',
+                info: 'Showing _START_ to _END_ of _TOTAL_ orders',
+                infoEmpty: 'No orders available',
+                paginate: {
+                    first: 'First',
+                    last: 'Last',
+                    next: 'Next',
+                    previous: 'Previous'
+                }
+            },
+            columnDefs: [
+                {
+                    targets: [{% if admin.role.value == 'super_admin' %}7{% else %}6{% endif %}], // Actions column
+                    orderable: false,
+                    searchable: false
+                }
+            ]
+        });
+    }
+});
+</script>
 {% endblock %}

@@ -8,10 +8,7 @@ $(document).ready(function() {
         }
     });
     
-    // Example: Auto-refresh dashboard data every 60 seconds
-    if ($('#dashboard-stats').length) {
-        setInterval(function() {
-            location.reload();
-        }, 60000);
-    }
+    // Example: Auto-refresh dashboard stats using HTMX (already handled by HTMX in templates)
+    // Dashboard stats are refreshed every 30 seconds via HTMX automatically
+    // No need for full page reload
 });
