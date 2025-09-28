@@ -106,6 +106,7 @@ async def list_users(
     request: Request,
     page: int = 1,
     current_admin: models.User = Depends(get_current_admin),
+    csrf_protect: CsrfProtect = Depends(),
     db: Session = Depends(get_db)
 ):
     """
@@ -130,7 +131,10 @@ async def list_users(
     # Calculate pagination info
     total_pages = (total_users + page_size - 1) // page_size
     
-    return templates.TemplateResponse(
+    # Generate CSRF tokens and set cookie
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    
+    response = templates.TemplateResponse(
         "users.html",
         {
             "request": request,
@@ -139,14 +143,19 @@ async def list_users(
             "current_page": page,
             "total_pages": total_pages,
             "total_users": total_users,
-            "roles": [role.value for role in models.UserRole]
+            "roles": [role.value for role in models.UserRole],
+            "csrf_token": csrf_token
         }
     )
+    
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 @router.get("/admin/users/new", response_class=HTMLResponse)
 async def new_user_form(
     request: Request,
     current_admin: models.User = Depends(get_current_admin),
+    csrf_protect: CsrfProtect = Depends(),
     db: Session = Depends(get_db)
 ):
     """
@@ -158,16 +167,23 @@ async def new_user_form(
     # Get all available groups
     groups = db.query(models.Group).order_by(models.Group.name).all()
     
-    return templates.TemplateResponse(
+    # Generate CSRF tokens and set cookie
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    
+    response = templates.TemplateResponse(
         "user_form.html",
         {
             "request": request,
             "admin": current_admin,
             "user": None,  # No existing user for a new form
             "groups": groups,
-            "roles": [role.value for role in models.UserRole]
+            "roles": [role.value for role in models.UserRole],
+            "csrf_token": csrf_token
         }
     )
+    
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 @router.post("/admin/users/new")
 async def create_user(
@@ -255,6 +271,7 @@ async def edit_user_form(
     user_id: int,
     request: Request,
     current_admin: models.User = Depends(get_current_admin),
+    csrf_protect: CsrfProtect = Depends(),
     db: Session = Depends(get_db)
 ):
     """
@@ -274,7 +291,10 @@ async def edit_user_form(
     # Get user's group IDs
     user_group_ids = [group.id for group in user.groups]
     
-    return templates.TemplateResponse(
+    # Generate CSRF tokens and set cookie
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    
+    response = templates.TemplateResponse(
         "user_form.html",
         {
             "request": request,
@@ -282,9 +302,13 @@ async def edit_user_form(
             "user": user,
             "groups": groups,
             "user_groups": user_group_ids,
-            "roles": [role.value for role in models.UserRole]
+            "roles": [role.value for role in models.UserRole],
+            "csrf_token": csrf_token
         }
     )
+    
+    csrf_protect.set_csrf_cookie(signed_token, response)
+    return response
 
 @router.post("/admin/users/{user_id}/edit")
 async def update_user(

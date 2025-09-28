@@ -93,6 +93,7 @@
                             
                             {% if user.id != admin.id %}
                             <form method="POST" action="/admin/users/{{ user.id }}/toggle-active" class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="{% if user.is_active %}bg-yellow-600{% else %}bg-green-600{% endif %} text-white px-2 py-1 rounded text-xs hover:{% if user.is_active %}bg-yellow-700{% else %}bg-green-700{% endif %}">
                                     {{ "Deactivate" if user.is_active else "Activate" }}
                                 </button>

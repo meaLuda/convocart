@@ -19,6 +19,7 @@
 {% endif %}
 
 <form method="POST" action="/admin/settings/update">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="space-y-6">
         {% if admin.role.value == 'super_admin' %}
         <!-- WhatsApp Settings -->

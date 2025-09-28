@@ -140,27 +140,13 @@ async def update_order_status(
     db: Session = Depends(get_db)
 ):
     """Update order status and optionally notify customer"""
-    # Debug: Check what tokens we have
-    logger.info(f"=== CSRF DEBUG for order {order_id} ===")
-    
-    # Check form data
-    form_data = await request.form()
-    csrf_token_from_form = form_data.get('csrf_token')
-    logger.info(f"CSRF token from form: {csrf_token_from_form}")
-    
-    # Check headers
-    csrf_token_from_header = request.headers.get('X-CSRF-Token')
-    logger.info(f"CSRF token from header: {csrf_token_from_header}")
-    
-    # Check cookies
-    csrf_cookie = request.cookies.get('fastapi-csrf-token')
-    logger.info(f"CSRF cookie value: {csrf_cookie}")
-    
-    logger.info("================================")
-    
-    # Validate CSRF token (flexible - accepts header OR body)
-    await csrf_protect.validate_csrf(request)
-    logger.info(f"✅ CSRF validation passed for order {order_id}")
+    # Validate CSRF token (flexible - accepts header OR body)  
+    try:
+        await csrf_protect.validate_csrf(request)
+        logger.info(f"✅ CSRF validation passed for order {order_id}")
+    except Exception as e:
+        logger.error(f"❌ CSRF validation failed for order {order_id}: {str(e)}")
+        raise
     
     # Get the current admin user
     current_admin = await get_current_admin(request, db)
