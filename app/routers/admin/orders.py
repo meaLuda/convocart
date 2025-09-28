@@ -33,6 +33,7 @@ async def view_orders(
     page: int = 1,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    csrf_protect: CsrfProtect = Depends(),
     db: Session = Depends(get_db)
 ):
     """View and manage orders"""
@@ -103,6 +104,9 @@ async def view_orders(
     # Calculate pagination info
     total_pages = (total_orders + page_size - 1) // page_size
     
+    # Generate CSRF token
+    csrf_token, signed_token = csrf_protect.generate_csrf_tokens()
+    
     return templates.TemplateResponse(
         "orders.html",
         {
@@ -114,7 +118,8 @@ async def view_orders(
             "total_pages": total_pages,
             "total_orders": total_orders,
             "status_filter": status,
-            "order_statuses": [status.value for status in models.OrderStatus]
+            "order_statuses": [status.value for status in models.OrderStatus],
+            "csrf_token": csrf_token
         }
     )
 

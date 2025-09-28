@@ -5,6 +5,9 @@
 {% block page_title %}Orders{% endblock %}
 
 {% block content %}
+<!-- Hidden CSRF token for JavaScript -->
+<input type="hidden" id="csrf_token" value="{{ csrf_token }}">
+
 <!-- Modern Header with Actions -->
 <div class="mb-6">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -282,7 +285,7 @@ $(document).ready(function() {
             fetch(form.attr('action'), {
                 method: 'POST',
                 headers: {
-                    'X-CSRF-Token': getCsrfToken()
+                    'X-CSRF-Token': document.getElementById('csrf_token').value
                 },
                 body: formData
             })
