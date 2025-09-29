@@ -10,7 +10,7 @@ tw_watch:
 tw_minify:
 	@npm run build
 
-run_app: tw_minify
+run_app: 
 	@echo "Starting FastAPI server..."
 	@echo "Visit http://localhost:8080 to access the application"
 	uv run uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
