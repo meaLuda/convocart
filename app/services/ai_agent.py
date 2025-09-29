@@ -3,6 +3,8 @@ AI Agent Service using LangGraph and Gemini for intelligent conversation handlin
 """
 import json
 import logging
+import asyncio
+import random
 from typing import Dict, Any, Optional, List, TypedDict, Union, Annotated
 from datetime import datetime
 from enum import Enum
@@ -412,11 +414,41 @@ class OrderBotAgent:
                 from langchain_core.messages import HumanMessage
                 final_messages = [HumanMessage(content="Hello, please help me.")]
             
-            # Use invoke for synchronous call wrapped in rate limiter
-            response = self.llm.invoke(final_messages)
+            # Use invoke for synchronous call wrapped in rate limiter with exponential backoff retry
+            max_retries = 3
+            base_delay = 1.0  # Base delay in seconds
             
-            # Record successful call for circuit breaker
-            ai_circuit_breaker.record_success()
+            for attempt in range(max_retries + 1):
+                try:
+                    response = self.llm.invoke(final_messages)
+                    
+                    # Record successful call for circuit breaker
+                    ai_circuit_breaker.record_success()
+                    break  # Success, exit retry loop
+                    
+                except Exception as retry_error:
+                    retry_error_msg = str(retry_error)
+                    
+                    # Check if we should retry for this error type
+                    should_retry = (
+                        "500" in retry_error_msg or 
+                        "internal" in retry_error_msg.lower() or
+                        "timeout" in retry_error_msg.lower() or
+                        ("429" in retry_error_msg and attempt < 2)  # Limit retries for rate limits
+                    )
+                    
+                    if attempt < max_retries and should_retry:
+                        # Calculate delay with exponential backoff and jitter
+                        delay = base_delay * (2 ** attempt) + (random.uniform(0, 1))
+                        logger.warning(f"LLM API call failed on attempt {attempt + 1}/{max_retries + 1}: {retry_error_msg}. Retrying in {delay:.2f}s...")
+                        
+                        # Use asyncio.sleep since this is an async method
+                        await asyncio.sleep(delay)
+                    else:
+                        # Last attempt or non-retryable error, re-raise the exception
+                        if attempt == max_retries:
+                            logger.error(f"LLM API call failed after {max_retries + 1} attempts: {retry_error_msg}")
+                        raise retry_error
             
             # Check for empty response due to safety filtering
             if not response or not hasattr(response, 'content') or not response.content.strip():
@@ -442,6 +474,8 @@ class OrderBotAgent:
                 error_code = "rate_limit_exceeded"
             elif "quota" in error_message.lower():
                 error_code = "quota_exceeded"
+            elif "500" in error_message or "internal" in error_message.lower():
+                error_code = "internal_server_error"
             else:
                 error_code = "api_error"
             
@@ -454,8 +488,10 @@ class OrderBotAgent:
             
             if "quota" in error_message.lower() or "429" in error_message:
                 fallback_content = "I'm currently at capacity due to high demand. Let me help you with a quick response - what specific items would you like to order? Please provide: item names, quantities, and any size/color preferences."
+            elif "500" in error_message or "internal" in error_message.lower():
+                fallback_content = "I'm experiencing a temporary service issue. While I work to resolve this, I can still help you! Please tell me: 1) What items do you want to order? 2) Quantities needed 3) Any size/color preferences. You can also contact support if urgent."
             else:
-                fallback_content = "I'm experiencing a temporary issue. Please try again in a moment or contact support if the problem persists."
+                fallback_content = "I'm experiencing a technical issue. Please try again in a moment or contact support if the problem persists."
                 
             return FallbackResponse(fallback_content)
             
@@ -1103,7 +1139,7 @@ OUTPUT: Respond with ONLY the intent name from the list above."""
             
             # Get customer recommendations (with fallback for errors)
             try:
-                recommendations = await self.analytics_service.get_customer_recommendations(customer.id, limit=3)
+                recommendations = self.analytics_service.get_customer_recommendations(customer.id, limit=3)
             except Exception as e:
                 logger.warning(f"Recommendations service error: {e}, using empty recommendations")
                 recommendations = []

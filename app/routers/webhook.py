@@ -159,7 +159,12 @@ async def process_webhook_background(data: dict):
                 # Reset conversation session and send welcome message
                 if customer:
                     session = models.ConversationSession.get_or_create_session(db, customer.id)
-                    session.update_state(ConversationState.WELCOME)
+                    # Only transition to WELCOME if not already there to avoid invalid transitions
+                    if session.current_state != ConversationState.WELCOME:
+                        session.update_state(ConversationState.WELCOME)
+                    else:
+                        # If already in WELCOME state, just update the last interaction time
+                        session.last_interaction = datetime.utcnow()
                     db.commit()
                     
                     # Send welcome message immediately
