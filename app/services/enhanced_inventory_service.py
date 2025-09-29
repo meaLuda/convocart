@@ -231,13 +231,15 @@ class EnhancedInventoryService:
         """AI-friendly product search with availability"""
         try:
             # Fuzzy search across name, description, tags
+            from app.utils.sql_security import escape_sql_pattern
+            safe_search = escape_sql_pattern(search_query)
             products = self.db.query(Product).filter(
                 Product.group_id == group_id,
                 Product.is_active == True,
                 or_(
-                    Product.name.ilike(f"%{search_query}%"),
-                    Product.description.ilike(f"%{search_query}%"),
-                    Product.search_keywords.ilike(f"%{search_query}%")
+                    Product.name.ilike(f"%{safe_search}%", escape='\\'),
+                    Product.description.ilike(f"%{safe_search}%", escape='\\'),
+                    Product.search_keywords.ilike(f"%{safe_search}%", escape='\\')
                 )
             ).limit(limit).all()
             
@@ -262,6 +264,39 @@ class EnhancedInventoryService:
             
         except Exception as e:
             logger.error(f"Error in AI product search: {str(e)}")
+            return []
+    
+    def get_all_available_products_for_ai(self, group_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get all available products for AI - used for general inventory requests"""
+        try:
+            # Get all active products with stock
+            products = self.db.query(Product).filter(
+                Product.group_id == group_id,
+                Product.is_active == True
+            ).limit(limit).all()
+            
+            results = []
+            for product in products:
+                total_stock = self.get_total_stock(product.id)
+                
+                # Only include products that are in stock
+                if total_stock > 0:
+                    results.append({
+                        "id": product.id,
+                        "name": product.name,
+                        "description": product.description,
+                        "price": product.get_current_price(),
+                        "currency": product.currency,
+                        "category": product.category.value if product.category else None,
+                        "in_stock": True,
+                        "stock_quantity": total_stock,
+                        "is_low_stock": total_stock <= product.low_stock_threshold,
+                        "variants": self._get_product_variants_for_ai(product.id)
+                    })
+            
+            return results
+        except Exception as e:
+            logger.error(f"Error getting all available products for AI: {str(e)}")
             return []
     
     def get_product_availability_for_ai(self, product_id: int, 

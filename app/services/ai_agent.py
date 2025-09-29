@@ -739,6 +739,16 @@ OUTPUT: Respond with ONLY the intent name from the list above."""
             group_name = group.name if group else "Our Business"
             business_type = group.business_type if group else BusinessType.GENERAL
             
+            # Get conversation context for ambiguous responses
+            conversation_history = self._load_conversation_history(customer.id, limit=3)
+            recent_context = ""
+            if conversation_history:
+                recent_messages = [msg.content for msg in conversation_history[-2:] if hasattr(msg, 'content')]
+                recent_context = f"Recent conversation: {' | '.join(recent_messages)}"
+            
+            # Check if message is ambiguous (like "Yes", "No", "OK")
+            is_ambiguous = len(message.strip()) <= 3 or message.lower().strip() in ['yes', 'no', 'ok', 'sure', 'fine', 'good']
+            
             # Get customer analytics for personalization
             customer_profile = self.analytics_service.analyze_customer_behavior(customer.id, update_analytics=False)
             
@@ -749,7 +759,8 @@ OUTPUT: Respond with ONLY the intent name from the list above."""
             recommendations = self.analytics_service.get_customer_recommendations(customer.id, limit=3)
             
             prompt = f"""{ai_personality}
-            Customer question: {message}
+            Customer message: "{message}"
+            {recent_context}
 
             Customer context:
             - Customer segment: {customer_profile.get('advanced_metrics', {}).get('customer_segment', 'new')}
@@ -760,6 +771,8 @@ OUTPUT: Respond with ONLY the intent name from the list above."""
             - Business type: {self._get_business_type_str(business_type)}
             - Business name: {group_name}
 
+            {'IMPORTANT: The customer response is ambiguous. Ask for clarification about what they want to do.' if is_ambiguous else ''}
+
             If relevant, you can mention these personalized recommendations:
             {', '.join([rec.get('name', '') for rec in recommendations[:2]])}
 
@@ -768,6 +781,7 @@ OUTPUT: Respond with ONLY the intent name from the list above."""
             - WhatsApp appropriate with your business personality
             - Include personalized touches when relevant
             - If you don't know something, suggest contacting support
+            - If the message is ambiguous, ask for clarification
 
             Response:"""
             
@@ -791,15 +805,26 @@ OUTPUT: Respond with ONLY the intent name from the list above."""
             from app.services.enhanced_inventory_service import get_enhanced_inventory_service
             inventory_service = get_enhanced_inventory_service(self.db)
             
-            # Extract product keywords from customer message
-            product_keywords = self._extract_product_keywords_from_message(message)
+            # Check if this is a general inventory request
+            is_general_request = self._is_general_inventory_request(message)
             
-            # Search for matching products in inventory
-            matching_products = inventory_service.search_products_for_ai(
-                group_id=group.id, 
-                search_query=product_keywords, 
-                limit=5
-            )
+            if is_general_request:
+                # Show all available products for general requests
+                matching_products = inventory_service.get_all_available_products_for_ai(
+                    group_id=group.id, 
+                    limit=10
+                )
+                product_keywords = "general inventory"
+            else:
+                # Extract product keywords from customer message
+                product_keywords = self._extract_product_keywords_from_message(message)
+                
+                # Search for matching products in inventory
+                matching_products = inventory_service.search_products_for_ai(
+                    group_id=group.id, 
+                    search_query=product_keywords, 
+                    limit=5
+                )
             
             # Get business inventory summary for context
             inventory_summary = inventory_service.get_business_inventory_summary_for_ai(group.id)
@@ -807,12 +832,21 @@ OUTPUT: Respond with ONLY the intent name from the list above."""
             # Enhanced prompt with real inventory data AND business personality
             inventory_context = ""
             if matching_products:
-                inventory_context = "CURRENT INVENTORY MATCHES:\n"
-                for product in matching_products[:3]:  # Top 3 matches
-                    status = "✅ In Stock" if product["in_stock"] else "❌ Out of Stock"
-                    inventory_context += f"- {product['name']}: {status} ({product['stock_quantity']} available) - KSH {product['price']}\n"
+                if is_general_request:
+                    inventory_context = "OUR AVAILABLE PRODUCTS:\n"
+                    for product in matching_products[:5]:  # Show more for general requests
+                        status = "✅ In Stock" if product["in_stock"] else "❌ Out of Stock"
+                        inventory_context += f"- {product['name']}: {status} ({product['stock_quantity']} available) - KSH {product['price']}\n"
+                else:
+                    inventory_context = "CURRENT INVENTORY MATCHES:\n"
+                    for product in matching_products[:3]:  # Top 3 matches for specific searches
+                        status = "✅ In Stock" if product["in_stock"] else "❌ Out of Stock"
+                        inventory_context += f"- {product['name']}: {status} ({product['stock_quantity']} available) - KSH {product['price']}\n"
             else:
-                inventory_context = "No exact matches found in current inventory.\n"
+                if is_general_request:
+                    inventory_context = "Currently no products are available in our inventory.\n"
+                else:
+                    inventory_context = "No exact matches found in current inventory.\n"
             
             # Get business-specific response patterns
             business_context = self._get_business_specific_context_for_inquiry(business_type, group_name)
@@ -830,12 +864,14 @@ BUSINESS CONTEXT:
 - What we DON'T sell: {business_context['out_of_scope']}
 
 CONTEXT-AWARE RESPONSE GUIDELINES:
-1. If products found IN STOCK: Mention specific items and prices
-2. If products found but OUT OF STOCK: Suggest alternatives within our business scope
-3. If NO matches AND request is WITHIN our business: Offer to check suppliers or suggest similar items
-4. If NO matches AND request is OUTSIDE our business: Politely redirect to our specialization
-5. Always maintain your business personality and expertise
-6. Keep under 80 words for WhatsApp
+1. If GENERAL INVENTORY REQUEST: Show available products with prices from our current stock
+2. If products found IN STOCK: Mention specific items and prices  
+3. If products found but OUT OF STOCK: Suggest alternatives within our business scope
+4. If NO matches AND request is WITHIN our business: Offer to check suppliers or suggest similar items
+5. If NO matches AND request is OUTSIDE our business: Politely redirect to our specialization
+6. Always maintain your business personality and expertise
+7. Keep under 100 words for WhatsApp
+8. For general requests, be helpful and show what's actually available
 
 BUSINESS-SPECIFIC RESPONSE EXAMPLES:
 {business_context['response_examples']}
@@ -907,13 +943,40 @@ Generate your contextually appropriate response:"""
         
         return business_contexts.get(business_type.lower(), default_context)
     
+    def _is_general_inventory_request(self, message: str) -> bool:
+        """Check if the message is asking for general product listing"""
+        message_lower = message.lower().strip()
+        
+        # Patterns that indicate general inventory requests
+        general_patterns = [
+            "what products do you have",
+            "what do you have in stock",
+            "what do you sell",
+            "show me your products",
+            "what products are available",
+            "what's available",
+            "what items do you have",
+            "show inventory",
+            "list products",
+            "what products",
+            "what stock",
+            "products available",
+            "available products"
+        ]
+        
+        for pattern in general_patterns:
+            if pattern in message_lower:
+                return True
+                
+        return False
+    
     def _extract_product_keywords_from_message(self, message: str) -> str:
         """Extract product-related keywords from customer message"""
         # Simple keyword extraction - can be enhanced with NLP
         message_lower = message.lower()
         
         # Remove common question words
-        stop_words = ['do', 'you', 'have', 'any', 'what', 'kind', 'of', 'is', 'there', 'are', 'can', 'i', 'get']
+        stop_words = ['do', 'you', 'have', 'any', 'what', 'kind', 'of', 'is', 'there', 'are', 'can', 'i', 'get', 'products', 'stock', 'available', 'in']
         words = message_lower.split()
         
         # Filter out stop words and keep potential product names
@@ -1163,10 +1226,12 @@ Generate your contextually appropriate response:"""
                 item_name = item.get("name", "").lower()
                 
                 # Search for matching products
+                from app.utils.sql_security import escape_sql_pattern
+                safe_item_name = escape_sql_pattern(item_name)
                 matching_products = self.db.query(Product).filter(
                     Product.group_id == group_id,
                     Product.is_active == True,
-                    Product.name.ilike(f"%{item_name}%")
+                    Product.name.ilike(f"%{safe_item_name}%", escape='\\')
                 ).limit(3).all()
                 
                 if matching_products:
@@ -1481,8 +1546,10 @@ Generate your contextually appropriate response:"""
                 query = query.filter(Product.category == category)
             
             # Look for products with similar names
+            from app.utils.sql_security import escape_sql_pattern
+            safe_item_name = escape_sql_pattern(item_name)
             similar_products = query.filter(
-                Product.name.ilike(f"%{item_name}%")
+                Product.name.ilike(f"%{safe_item_name}%", escape='\\')
             ).limit(5).all()
             
             result = []

@@ -73,8 +73,12 @@ async def process_webhook_background(data: dict):
     """Process webhook in background - runs after immediate response"""
     from app.database import SessionLocal
     
-    db = SessionLocal()
+    db = None
     try:
+        db = SessionLocal()
+        # Test connection early to catch connection issues
+        from sqlalchemy import text
+        db.execute(text("SELECT 1")).fetchone()
         logger.info(f"Background processing webhook: {data}")
         
         # Basic webhook validation
@@ -151,11 +155,16 @@ async def process_webhook_background(data: dict):
                     db.commit()
                     logger.info(f"Updated customer {customer.id} with active_group_id {current_group_id}")
                     
-                # Reset conversation session
+                # Reset conversation session and send welcome message
                 if customer:
                     session = models.ConversationSession.get_or_create_session(db, customer.id)
-                    session.update_state(ConversationState.INITIAL)
+                    session.update_state(ConversationState.WELCOME)
                     db.commit()
+                    
+                    # Send welcome message immediately
+                    await send_welcome_message(phone_number, group, whatsapp_service_with_db)
+                    logger.info(f"Sent welcome message for group {group.name} to {phone_number}")
+                    return  # Exit here, don't process further
         
         # If no customer, send help message
         if not customer:
@@ -174,6 +183,12 @@ async def process_webhook_background(data: dict):
                 )
             except Exception as ai_error:
                 logger.error(f"AI processing failed: {ai_error}, falling back to basic logic")
+                # Ensure clean database state for fallback
+                try:
+                    db.rollback()
+                    logger.info("Database transaction rolled back before fallback")
+                except Exception as rollback_error:
+                    logger.error(f"Failed to rollback transaction: {rollback_error}")
                 await handle_customer_message_with_context(
                     customer, event_data, db, current_group_id, whatsapp_service_with_db
                 )
@@ -186,10 +201,17 @@ async def process_webhook_background(data: dict):
         
     except Exception as e:
         logger.error(f"Error in background webhook processing: {str(e)}")
-        try:
-            db.rollback()
-        except:
-            pass
+        if db:
+            try:
+                db.rollback()
+                logger.info("Database transaction rolled back successfully")
+            except Exception as rollback_error:
+                logger.error(f"Failed to rollback transaction: {rollback_error}")
+                # Close and recreate session for cleanup
+                try:
+                    db.close()
+                except:
+                    pass
     finally:
         db.close()
 
@@ -553,18 +575,12 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         
     # STEP 1: Handle the initial welcome flow
     if current_state == ConversationState.INITIAL:
-        if message_type == "text" and message.startswith("order from group:"):
-            # New conversation from click-to-chat link
-            await send_welcome_message(phone_number, group, whatsapp_service)
-            session.update_state(ConversationState.WELCOME)
-            db.commit()
-            return
-        else:
-            # We're in INITIAL state but didn't get an initial group message
-            # This might be a continuation of an existing conversation
-            # Move to IDLE state and proceed with intent detection
-            session.update_state(ConversationState.IDLE)
-            db.commit()
+        # Note: "order from group:" messages are handled earlier in background processing
+        # and should never reach this point. If we're in INITIAL state here, it means
+        # this is a continuation of an existing conversation.
+        # Move to IDLE state and proceed with intent detection
+        session.update_state(ConversationState.IDLE)
+        db.commit()
     
     # STEP 2: Handle primary menu options and commands
     # Detect intent from message or button press

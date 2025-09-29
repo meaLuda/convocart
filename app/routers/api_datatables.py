@@ -55,12 +55,14 @@ async def orders_datatable(
         
         # Apply global search if provided
         if search_value:
+            from app.utils.sql_security import escape_sql_pattern
+            safe_search = escape_sql_pattern(search_value)
             search_filter = or_(
-                models.Order.order_number.ilike(f"%{search_value}%"),
-                models.Customer.name.ilike(f"%{search_value}%"),
-                models.Customer.phone_number.ilike(f"%{search_value}%"),
-                models.Order.order_details.ilike(f"%{search_value}%"),
-                models.Order.payment_ref.ilike(f"%{search_value}%")
+                models.Order.order_number.ilike(f"%{safe_search}%", escape='\\'),
+                models.Customer.name.ilike(f"%{safe_search}%", escape='\\'),
+                models.Customer.phone_number.ilike(f"%{safe_search}%", escape='\\'),
+                models.Order.order_details.ilike(f"%{safe_search}%", escape='\\'),
+                models.Order.payment_ref.ilike(f"%{safe_search}%", escape='\\')
             )
             query = query.filter(search_filter)
         
@@ -448,10 +450,12 @@ async def groups_datatable(
         
         # Apply global search if provided
         if search_value:
+            from app.utils.sql_security import escape_sql_pattern
+            safe_search = escape_sql_pattern(search_value)
             search_filter = or_(
-                models.Group.name.ilike(f"%{search_value}%"),
-                models.Group.identifier.ilike(f"%{search_value}%"),
-                models.Group.description.ilike(f"%{search_value}%")
+                models.Group.name.ilike(f"%{safe_search}%", escape='\\'),
+                models.Group.identifier.ilike(f"%{safe_search}%", escape='\\'),
+                models.Group.description.ilike(f"%{safe_search}%", escape='\\')
             )
             query = query.filter(search_filter)
         
@@ -582,12 +586,14 @@ async def products_datatable(
         
         # Apply search filter
         if search_value:
-            search_pattern = f"%{search_value}%"
+            from app.utils.sql_security import escape_sql_pattern
+            safe_search = escape_sql_pattern(search_value)
+            search_pattern = f"%{safe_search}%"
             query = query.filter(
                 or_(
-                    models.Product.name.ilike(search_pattern),
-                    models.Product.description.ilike(search_pattern),
-                    models.Product.sku.ilike(search_pattern)
+                    models.Product.name.ilike(search_pattern, escape='\\'),
+                    models.Product.description.ilike(search_pattern, escape='\\'),
+                    models.Product.sku.ilike(search_pattern, escape='\\')
                 )
             )
         
