@@ -79,13 +79,27 @@ class OrderBotAgent:
             self.llm = None
             self.graph = None
             return
-            
-        self.llm = ChatGoogleGenerativeAI(
-            model=self.settings.ai_model_name,
-            google_api_key=self.settings.gemini_api_key,
-            temperature=self.settings.ai_temperature,
-            max_output_tokens=self.settings.ai_max_tokens
-        )
+        
+        try:
+            self.llm = ChatGoogleGenerativeAI(
+                model=self.settings.ai_model_name,
+                google_api_key=self.settings.gemini_api_key,
+                temperature=self.settings.ai_temperature,
+                max_output_tokens=self.settings.ai_max_tokens,
+                # Add safety settings to prevent blocks (use numeric values)
+                safety_settings={
+                    1: 4,  # HATE -> BLOCK_NONE
+                    2: 4,  # HARASSMENT -> BLOCK_NONE 
+                    3: 4,  # SEXUAL -> BLOCK_NONE
+                    7: 4   # DANGEROUS -> BLOCK_NONE
+                }
+            )
+            logger.info(f"✅ Gemini AI model '{self.settings.ai_model_name}' initialized successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Gemini model: {str(e)}")
+            self.llm = None
+            self.graph = None
+            return
         
         # Initialize memory for conversation persistence
         self.memory = MemorySaver() if self.settings.ai_conversation_memory else None
@@ -1494,10 +1508,16 @@ Generate your contextually appropriate response:"""
                     continue
                 
                 # Create new message with cleaned content
-                # LangChain messages don't have _type attribute, they use class type directly
+                # Convert SystemMessage to HumanMessage as Gemini doesn't support system messages
                 try:
-                    msg_type = type(msg)
-                    clean_msg = msg_type(content=content)
+                    from langchain_core.messages import SystemMessage, HumanMessage
+                    if isinstance(msg, SystemMessage):
+                        # Convert system messages to human messages for Gemini compatibility
+                        clean_msg = HumanMessage(content=content)
+                        logger.debug(f"Converted SystemMessage to HumanMessage for Gemini compatibility")
+                    else:
+                        msg_type = type(msg)
+                        clean_msg = msg_type(content=content)
                     valid_messages.append(clean_msg)
                     
                     if self.settings.ai_debug_mode:
@@ -1543,7 +1563,22 @@ Generate your contextually appropriate response:"""
             query = self.db.query(Product).filter(Product.is_active == True)
             
             if category:
-                query = query.filter(Product.category == category)
+                # Convert string category to enum
+                from app.models import ProductCategory
+                try:
+                    # Try to find matching enum value
+                    category_enum = None
+                    for cat in ProductCategory:
+                        if cat.value.lower() == category.lower():
+                            category_enum = cat
+                            break
+                    
+                    if category_enum:
+                        query = query.filter(Product.category == category_enum)
+                except (ValueError, AttributeError):
+                    # If category conversion fails, skip category filtering
+                    logger.warning(f"Invalid category '{category}' provided, skipping category filter")
+                    pass
             
             # Look for products with similar names
             from app.utils.sql_security import escape_sql_pattern

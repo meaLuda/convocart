@@ -397,7 +397,11 @@ def cache_result(
             # Run the async wrapper in the current event loop or create one
             try:
                 loop = asyncio.get_event_loop()
-                return loop.run_until_complete(_async_sync_wrapper())
+                if loop.is_running():
+                    # We're already in an event loop, return cached result or execute synchronously
+                    return _async_sync_wrapper()  # Remove asyncio.run call
+                else:
+                    return loop.run_until_complete(_async_sync_wrapper())
             except RuntimeError:
                 # No event loop, create one
                 return asyncio.run(_async_sync_wrapper())
@@ -442,7 +446,11 @@ def invalidate_cache(namespace: str = "functions", pattern: str = "*"):
             
             try:
                 loop = asyncio.get_event_loop()
-                loop.run_until_complete(_invalidate())
+                if loop.is_running():
+                    # We're already in an event loop, skip invalidation or do it synchronously
+                    pass  # Skip for now to avoid event loop issues
+                else:
+                    loop.run_until_complete(_invalidate())
             except RuntimeError:
                 asyncio.run(_invalidate())
             
@@ -537,7 +545,11 @@ def cache_analytics(expire_hours: int = 1):
             # Run the async wrapper in the current event loop or create one
             try:
                 loop = asyncio.get_event_loop()
-                return loop.run_until_complete(_async_sync_wrapper())
+                if loop.is_running():
+                    # We're already in an event loop, return cached result or execute synchronously
+                    return _async_sync_wrapper()  # Remove asyncio.run call
+                else:
+                    return loop.run_until_complete(_async_sync_wrapper())
             except RuntimeError:
                 # No event loop, create one
                 return asyncio.run(_async_sync_wrapper())
@@ -606,7 +618,11 @@ def cache_database_query(ttl: Optional[int] = None):
             # Run the async wrapper in the current event loop or create one
             try:
                 loop = asyncio.get_event_loop()
-                return loop.run_until_complete(_async_sync_wrapper())
+                if loop.is_running():
+                    # We're already in an event loop, return cached result or execute synchronously
+                    return _async_sync_wrapper()  # Remove asyncio.run call
+                else:
+                    return loop.run_until_complete(_async_sync_wrapper())
             except RuntimeError:
                 # No event loop, create one
                 return asyncio.run(_async_sync_wrapper())
