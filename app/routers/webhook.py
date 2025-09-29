@@ -10,6 +10,7 @@ from app.database import get_db
 from app.services.whatsapp import WhatsAppService
 from app.services.ai_agent import get_ai_agent, Intent
 from app.services.webhook_security import validate_twilio_webhook, add_security_headers
+from app.services.conversation_debugger import get_conversation_debugger
 from app.config import get_settings
 
 SETTINGS = get_settings()
@@ -175,27 +176,10 @@ async def process_webhook_background(data: dict):
             whatsapp_service_with_db.send_text_message(phone_number, welcome_msg)
             return
         
-        # Process with AI or fallback logic
-        if SETTINGS.enable_ai_agent:
-            try:
-                await handle_customer_message_with_ai_context(
-                    customer, event_data, db, current_group_id, whatsapp_service_with_db
-                )
-            except Exception as ai_error:
-                logger.error(f"AI processing failed: {ai_error}, falling back to basic logic")
-                # Ensure clean database state for fallback
-                try:
-                    db.rollback()
-                    logger.info("Database transaction rolled back before fallback")
-                except Exception as rollback_error:
-                    logger.error(f"Failed to rollback transaction: {rollback_error}")
-                await handle_customer_message_with_context(
-                    customer, event_data, db, current_group_id, whatsapp_service_with_db
-                )
-        else:
-            await handle_customer_message_with_context(
-                customer, event_data, db, current_group_id, whatsapp_service_with_db
-            )
+        # Process with unified LangGraph flow (consolidates AI and fallback logic)
+        await handle_customer_message_unified(
+            customer, event_data, db, current_group_id, whatsapp_service_with_db
+        )
             
         logger.info(f"Background webhook processing completed for {phone_number}")
         
@@ -215,6 +199,126 @@ async def process_webhook_background(data: dict):
     finally:
         db.close()
 
+
+async def handle_customer_message_unified(customer, event_data, db, current_group_id=None, whatsapp_service=None):
+    """
+    Unified message processing using LangGraph with built-in fallback logic
+    Consolidates AI and rule-based processing into single conversation flow
+    """
+    phone_number = customer.phone_number
+    message = event_data.get("message", "").strip()
+    message_type = event_data.get("type")
+    
+    # Prioritize explicitly provided group_id, then active_group_id, then default group_id
+    group_id = current_group_id or customer.active_group_id or customer.group_id
+    
+    logger.info(f"UNIFIED PROCESSING: customer_id={customer.id}, group_id={group_id}")
+    logger.info(f"Processing message: type={message_type}, content_preview={message[:50]}...")
+    
+    # Handle media attachments if present
+    media_info = None
+    if event_data.get("MessageType") in ["image", "audio", "video", "document"]:
+        logger.info(f"Processing media message: {event_data.get('MessageType')}")
+        try:
+            media_info = whatsapp_service.process_media_message(event_data)
+            if media_info:
+                from app.models import MediaAttachment
+                media_attachment = MediaAttachment(
+                    media_sid=media_info["media_sid"],
+                    message_sid=media_info.get("message_sid"),
+                    customer_id=customer.id,
+                    group_id=group_id,
+                    filename=media_info["filename"],
+                    file_path=media_info["file_path"],
+                    content_type=media_info["content_type"],
+                    file_size=media_info["file_size"],
+                    media_type=media_info["message_type"],
+                    caption=media_info.get("caption", ""),
+                    from_number=media_info.get("from_number"),
+                    download_timestamp=datetime.utcnow(),
+                    media_metadata=media_info
+                )
+                db.add(media_attachment)
+                db.commit()
+                
+                media_context = f"\n[User sent {media_info['message_type']}: {media_info['filename']}]"
+                if media_info.get("caption"):
+                    media_context += f"\nCaption: {media_info['caption']}"
+                message = (message + media_context).strip()
+        except Exception as e:
+            logger.error(f"Error processing media attachment: {str(e)}")
+    
+    # Get or create conversation session for state management
+    from app.models import ConversationSession
+    session = ConversationSession.get_or_create_session(db, customer.id)
+    current_state = session.current_state
+    
+    # Initialize conversation debugger for real-time monitoring
+    debugger = get_conversation_debugger(db)
+    
+    try:
+        # Try AI processing first if enabled
+        if SETTINGS.enable_ai_agent:
+            try:
+                ai_agent = get_ai_agent(db)
+                if ai_agent.llm and ai_agent.graph:  # AI agent is properly initialized
+                    ai_result = await ai_agent.process_message(
+                        customer_id=customer.id,
+                        group_id=group_id,
+                        message=message,
+                        conversation_state=current_state.value if hasattr(current_state, 'value') else str(current_state),
+                        context=session.get_context()
+                    )
+                    
+                    # Trace AI processing result for debugging
+                    debugger.trace_conversation_step(
+                        customer_id=customer.id,
+                        message=message,
+                        from_state=current_state.value if hasattr(current_state, 'value') else str(current_state),
+                        to_state=ai_result.get("conversation_state", str(current_state)),
+                        intent=ai_result.get("intent"),
+                        action=f"AI: {ai_result.get('action', 'unknown')}",
+                        context=session.get_context()
+                    )
+                    
+                    # Handle AI agent response within unified flow
+                    await handle_ai_agent_response(ai_result, customer, session, db, whatsapp_service, phone_number, group_id)
+                    return
+                else:
+                    logger.warning("AI agent not properly initialized, using rule-based processing")
+            except Exception as ai_error:
+                logger.error(f"AI processing failed: {ai_error}, falling back to rule-based processing")
+                # Continue to rule-based processing instead of separate fallback system
+        
+        # Trace fallback to rule-based processing
+        debugger.trace_conversation_step(
+            customer_id=customer.id,
+            message=message,
+            from_state=current_state.value if hasattr(current_state, 'value') else str(current_state),
+            to_state=str(current_state),  # State won't change yet
+            intent="fallback_to_rules",
+            action="Rule-based processing",
+            context=session.get_context()
+        )
+        
+        # Rule-based processing using the same state management system
+        await handle_rule_based_processing(customer, event_data, db, current_group_id, whatsapp_service, session)
+        
+    except Exception as e:
+        logger.error(f"Error in unified message processing: {str(e)}")
+        # Graceful error handling
+        whatsapp_service.send_text_message(
+            phone_number,
+            "I apologize, but I'm experiencing technical difficulties. Please try again in a moment."
+        )
+
+async def handle_rule_based_processing(customer, event_data, db, current_group_id, whatsapp_service, session):
+    """
+    Rule-based processing that shares the same state management as AI processing
+    This replaces the separate fallback system
+    """
+    # Pass the session to ensure unified state management
+    await handle_customer_message_with_context(customer, event_data, db, current_group_id, whatsapp_service, session)
 
 async def handle_customer_message_with_ai_context(customer, event_data, db, current_group_id=None, whatsapp_service=None):
     """
@@ -294,14 +398,7 @@ async def handle_customer_message_with_ai_context(customer, event_data, db, curr
         # Handle AI agent response
         await handle_ai_agent_response(ai_result, customer, session, db, whatsapp_service, phone_number, group_id)
         
-        # Save conversation turn (user message + assistant response) for context
-        try:
-            # Get the assistant response that was sent
-            assistant_response = get_last_assistant_response(ai_result)
-            if assistant_response:
-                ai_agent._save_conversation_turn(customer.id, message, assistant_response)
-        except Exception as save_error:
-            logger.error(f"Error saving conversation turn: {str(save_error)}")
+        # NOTE: Conversation turn saving removed - LangGraph checkpointer handles persistence automatically
         
     except Exception as e:
         logger.error(f"Error in AI processing: {str(e)}. Falling back to original logic.")
@@ -559,17 +656,20 @@ async def handle_ai_payment_processing(phone_number: str, customer_id: int, paym
             }
         )
     
-async def handle_customer_message_with_context(customer, event_data, db, current_group_id=None, whatsapp_service=None):
+async def handle_customer_message_with_context(customer, event_data, db, current_group_id=None, whatsapp_service=None, session=None):
     """
     Process the customer message with conversation context awareness
+    Now supports unified session management
     """
     phone_number = customer.phone_number
     message = event_data.get("message", "").strip()
     message_type = event_data.get("type")
     button_id = event_data.get("button_id", "") if message_type == "button" else None
     
-    # Get or create conversation session
-    session = models.ConversationSession.get_or_create_session(db, customer.id)
+    # Use provided session or create/get one (for backward compatibility)
+    if session is None:
+        session = models.ConversationSession.get_or_create_session(db, customer.id)
+    
     current_state = session.current_state
     context = session.get_context()
     
@@ -596,76 +696,8 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         session.update_state(ConversationState.IDLE)
         db.commit()
     
-    # STEP 2: Handle primary menu options and commands
-    # Detect intent from message or button press
-    intent = detect_customer_intent(message, message_type, button_id, current_state)
-    
-    # Handle detected intent
-    if intent == "place_order":
-        # User wants to place an order
-        place_order_msg = "Please type your order details, including:\n\n"
-        place_order_msg += "- Item names\n- Quantities\n- Any special requests\n\n"
-        place_order_msg += "Example: 2 t-shirts size L, 1 hoodie black size XL"
-        
-        whatsapp_service.send_text_message(phone_number, place_order_msg)
-        session.update_state(ConversationState.AWAITING_ORDER_DETAILS)
-        db.commit()
-        return
-        
-    elif intent == "track_order":
-        # User wants to track orders
-        await handle_track_order(phone_number, customer.id, db, whatsapp_service)
-        session.update_state(ConversationState.IDLE)
-        db.commit()
-        return
-        
-    elif intent == "cancel_order":
-        # User wants to cancel an order
-        await handle_cancel_order(phone_number, customer.id, db, whatsapp_service)
-        session.update_state(ConversationState.IDLE)
-        db.commit()
-        return
-        
-    elif intent == "contact_support":
-        # User wants to contact support
-        await handle_contact_support(phone_number, group, whatsapp_service)
-        session.update_state(ConversationState.WAITING_FOR_SUPPORT)
-        db.commit()
-        return
-    
-    elif intent == "mpesa_payment":
-        # User indicates they want to pay with M-Pesa
-        # Check if user has a pending order that needs payment
-        last_order = db.query(models.Order).filter(
-            models.Order.customer_id == customer.id,
-            models.Order.order_status.in_(['pending', 'confirmed'])
-        ).order_by(models.Order.created_at.desc()).first()
-        
-        if last_order:
-            # User has a pending order, send proper payment instructions
-            payment_instructions = get_mpesa_payment_instructions(group, last_order)
-            whatsapp_service.send_text_message(phone_number, payment_instructions)
-            session.update_state(ConversationState.AWAITING_PAYMENT_CONFIRMATION)
-            db.commit()
-        else:
-            # No pending order, ask user to place order first
-            whatsapp_service.send_text_message(
-                phone_number, 
-                "You don't have any pending orders to pay for. Please place an order first by selecting '1. Place Order' from the menu."
-            )
-            send_default_options(phone_number, whatsapp_service)
-            session.update_state(ConversationState.IDLE)
-            db.commit()
-        return
-        
-    elif intent == "cash_payment":
-        # User wants to pay with cash on delivery
-        await handle_cash_payment(phone_number, customer.id, db, whatsapp_service)
-        session.update_state(ConversationState.IDLE)
-        db.commit()
-        return
-    
-    # STEP 3: Handle state-specific message processing
+    # STEP 2: Handle state-specific message processing FIRST (critical fix)
+    # State-specific processing takes priority over general intent detection
     if current_state == ConversationState.AWAITING_ORDER_DETAILS:
         # User is providing order details
         if message_type == "text" and len(message) > 5:
@@ -728,8 +760,80 @@ async def handle_customer_message_with_context(customer, event_data, db, current
         db.commit()
         return
     
-    # If we reach here, we couldn't determine what to do
-    # Send default options
+    # STEP 3: General intent detection (fallback when no state-specific handling applies)
+    # Only reaches here if no state-specific processing was done
+    intent = detect_customer_intent(message, message_type, button_id, current_state)
+    
+    if intent == "place_order":
+        # User wants to place an order
+        place_order_msg = "Please type your order details, including:\n\n"
+        place_order_msg += "- Item names\n- Quantities\n- Any special requests\n\n"
+        place_order_msg += "Example: 2 t-shirts size L, 1 hoodie black size XL"
+        
+        # Trace intent-driven state transition
+        debugger = get_conversation_debugger(db)
+        debugger.trace_conversation_step(
+            customer_id=customer.id,
+            message=message,
+            from_state=current_state.value if hasattr(current_state, 'value') else str(current_state),
+            to_state=ConversationState.AWAITING_ORDER_DETAILS.value,
+            intent=intent,
+            action="Transition to order details collection",
+            context=session.get_context()
+        )
+        
+        whatsapp_service.send_text_message(phone_number, place_order_msg)
+        session.update_state(ConversationState.AWAITING_ORDER_DETAILS)
+        db.commit()
+        return
+        
+    elif intent == "track_order":
+        await handle_track_order(phone_number, customer.id, db, whatsapp_service)
+        session.update_state(ConversationState.IDLE)
+        db.commit()
+        return
+        
+    elif intent == "cancel_order":
+        await handle_cancel_order(phone_number, customer.id, db, whatsapp_service)
+        session.update_state(ConversationState.IDLE)
+        db.commit()
+        return
+        
+    elif intent == "contact_support":
+        await handle_contact_support(phone_number, group, whatsapp_service)
+        session.update_state(ConversationState.WAITING_FOR_SUPPORT)
+        db.commit()
+        return
+    
+    elif intent == "mpesa_payment":
+        # Check if user has a pending order that needs payment
+        last_order = db.query(models.Order).filter(
+            models.Order.customer_id == customer.id,
+            models.Order.status == models.OrderStatus.PENDING
+        ).order_by(models.Order.created_at.desc()).first()
+        
+        if last_order:
+            payment_instructions = get_mpesa_payment_instructions(group, last_order)
+            whatsapp_service.send_text_message(phone_number, payment_instructions)
+            session.update_state(ConversationState.AWAITING_PAYMENT_CONFIRMATION)
+            db.commit()
+        else:
+            whatsapp_service.send_text_message(
+                phone_number, 
+                "You don't have any pending orders to pay for. Please place an order first."
+            )
+            send_default_options(phone_number, whatsapp_service)
+            session.update_state(ConversationState.IDLE)
+            db.commit()
+        return
+        
+    elif intent == "cash_payment":
+        await handle_cash_payment(phone_number, customer.id, db, whatsapp_service)
+        session.update_state(ConversationState.IDLE)
+        db.commit()
+        return
+    
+    # If we reach here, we couldn't determine what to do - send default options
     send_default_options(phone_number, whatsapp_service)
     session.update_state(ConversationState.IDLE)
     db.commit()

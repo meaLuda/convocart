@@ -3,11 +3,11 @@ AI Agent Service using LangGraph and Gemini for intelligent conversation handlin
 """
 import json
 import logging
-from typing import Dict, Any, Optional, List, TypedDict, Union
+from typing import Dict, Any, Optional, List, TypedDict, Union, Annotated
 from datetime import datetime
 from enum import Enum
 
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage, add_messages
 from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, END
@@ -21,7 +21,7 @@ from app.services.analytics_service import get_analytics_service
 from app.services.business_config_service import get_business_config_service
 from app.services.rate_limiter import get_rate_limiter, rate_limited_api_call
 from app.services.api_monitor import get_api_monitor
-from app.services.enhanced_memory_service import get_enhanced_memory_service
+# Enhanced memory service removed - using pure LangGraph memory management
 from app.services.cache_service import get_cache_service
 from app.utils.security import SecurityValidator, ai_circuit_breaker
 from sqlalchemy.orm import Session
@@ -30,15 +30,38 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 class AgentState(TypedDict):
-    """State for the AI agent conversation flow"""
-    messages: List[Union[HumanMessage, AIMessage, SystemMessage]]
+    """
+    Enhanced state for AI agent conversation flow using LangGraph v0.3+ best practices
+    
+    This replaces the custom ConversationSession system with LangGraph's built-in state management
+    """
+    # LangGraph v0.3+ pattern: Use Annotated with add_messages for proper message handling
+    messages: Annotated[List[BaseMessage], add_messages]
+    
+    # Customer and business context
     customer_id: int
     group_id: int
+    
+    # Conversation flow state
     current_intent: str
     conversation_state: str
-    context: Dict[str, Any]
     last_action: str
+    
+    # Enhanced conversation context (replaces ConversationSession context)
+    context: Dict[str, Any]
     order_data: Optional[Dict[str, Any]]
+    
+    # LangGraph persistence fields
+    thread_id: str  # For conversation threading
+    session_metadata: Dict[str, Any]  # Session information
+    
+    # State validation and recovery
+    state_version: str  # For state migration/compatibility
+    error_context: Optional[Dict[str, Any]]  # For error recovery
+    
+    # Conversation history management (LangGraph pattern)
+    conversation_summary: Optional[str]  # For long conversation summarization
+    total_messages: int  # Message count tracking
 
 class Intent(str, Enum):
     """Customer intents the AI can detect"""
@@ -64,11 +87,10 @@ class OrderBotAgent:
         self.db = db
         self.settings = settings
         
-        # Initialize enhanced services
+        # Initialize services (enhanced memory removed - using pure LangGraph memory)
         self.inventory_service = get_inventory_service(db)
         self.analytics_service = get_analytics_service(db)
         self.business_config_service = get_business_config_service(db)
-        self.enhanced_memory = get_enhanced_memory_service(db)
         self._cache_service = None
         self.rate_limiter = get_rate_limiter()
         self.api_monitor = get_api_monitor(db)
@@ -101,8 +123,9 @@ class OrderBotAgent:
             self.graph = None
             return
         
-        # Initialize memory for conversation persistence
-        self.memory = MemorySaver() if self.settings.ai_conversation_memory else None
+        # LangGraph v0.3+ pattern: Use MemorySaver checkpointer for conversation persistence
+        # This replaces custom ConversationSession and EnhancedMemoryService
+        self.checkpointer = MemorySaver() if self.settings.ai_conversation_memory else None
         
         # Build the conversation graph
         self.graph = self._build_conversation_graph()
@@ -156,7 +179,7 @@ class OrderBotAgent:
         workflow.add_edge("general_response", END)
         workflow.add_edge("error_handler", END)
         
-        return workflow.compile(checkpointer=self.memory)
+        return workflow.compile(checkpointer=self.checkpointer)
     
     @rate_limited_api_call(get_rate_limiter())
     async def _rate_limited_llm_call(self, messages: List, estimated_tokens: int = 1000):
@@ -779,12 +802,17 @@ OUTPUT: Respond with ONLY the intent name from the list above."""
             group_name = group.name if group else "Our Business"
             business_type = group.business_type if group else BusinessType.GENERAL
             
-            # Get conversation context for ambiguous responses
-            conversation_history = self._load_conversation_history(customer.id, limit=3)
+            # Get conversation context from LangGraph state (modern approach)
             recent_context = ""
-            if conversation_history:
-                recent_messages = [msg.content for msg in conversation_history[-2:] if hasattr(msg, 'content')]
-                recent_context = f"Recent conversation: {' | '.join(recent_messages)}"
+            if state.get("messages") and len(state["messages"]) > 1:
+                # Extract recent message content from LangGraph state
+                recent_messages = []
+                for msg in state["messages"][-3:]:  # Last 3 messages
+                    if hasattr(msg, 'content') and msg.content.strip():
+                        recent_messages.append(msg.content.strip())
+                
+                if recent_messages:
+                    recent_context = f"Recent conversation: {' | '.join(recent_messages[-2:])}"
             
             # Check if message is ambiguous (like "Yes", "No", "OK")
             is_ambiguous = len(message.strip()) <= 3 or message.lower().strip() in ['yes', 'no', 'ok', 'sure', 'fine', 'good']
@@ -1373,30 +1401,39 @@ Generate your contextually appropriate response:"""
             }
         
         try:
-            # Load conversation history for context
-            conversation_history = self._load_conversation_history(customer_id, limit=10)
+            # LangGraph v0.3+ pattern: Create thread-based config for conversation persistence
+            thread_id = f"customer_{customer_id}"
+            config = RunnableConfig(
+                configurable={"thread_id": thread_id}
+            ) if self.checkpointer else None
             
-            # Add current message to history
-            conversation_history.append(HumanMessage(content=message))
-            
-            # Create initial state with conversation history
+            # Create enhanced initial state with current message
+            # LangGraph will automatically manage conversation history via checkpointer
             initial_state = AgentState(
-                messages=conversation_history,
+                messages=[HumanMessage(content=message)],
                 customer_id=customer_id,
                 group_id=group_id,
                 current_intent=Intent.UNKNOWN,
                 conversation_state=conversation_state,
                 context=context or {},
                 last_action="",
-                order_data=None
+                order_data=None,
+                
+                # LangGraph v0.3+ state fields
+                thread_id=thread_id,
+                session_metadata={
+                    "customer_id": customer_id,
+                    "group_id": group_id,
+                    "start_time": datetime.utcnow().isoformat(),
+                    "conversation_state": conversation_state
+                },
+                state_version="v2.0",
+                error_context=None,
+                conversation_summary=None,
+                total_messages=0
             )
             
-            # Create config for conversation memory
-            config = RunnableConfig(
-                configurable={"thread_id": f"customer_{customer_id}"}
-            ) if self.memory else None
-            
-            # Run the conversation graph
+            # Run the conversation graph with LangGraph persistence
             result = await self.graph.ainvoke(initial_state, config=config)
             
             return {
@@ -1425,79 +1462,9 @@ Generate your contextually appropriate response:"""
                     "response": "I encountered an error processing your message. Please try again."
                 }
     
-    def _load_conversation_history(self, customer_id: int, limit: int = 10) -> List[Union[HumanMessage, AIMessage]]:
-        """Load recent conversation history from session context"""
-        try:
-            # Import here to avoid circular imports
-            from app.models import ConversationSession
-            
-            # Get current conversation session
-            session = ConversationSession.get_or_create_session(self.db, customer_id)
-            context = session.get_context() or {}
-            
-            # Get conversation history from context
-            conversation_messages = context.get('conversation_history', [])
-            
-            # Convert to LangChain messages (keep last N messages)
-            conversation_history = []
-            recent_messages = conversation_messages[-limit:] if len(conversation_messages) > limit else conversation_messages
-            
-            for msg in recent_messages:
-                content = msg.get('content', '').strip()
-                if msg.get('role') == 'user' and content:  # Only add non-empty user messages
-                    conversation_history.append(HumanMessage(content=content))
-                elif msg.get('role') == 'assistant' and content:  # Only add non-empty assistant messages
-                    conversation_history.append(AIMessage(content=content))
-            
-            if self.settings.ai_debug_mode:
-                logger.info(f"Loaded {len(conversation_history)} messages from conversation history")
-                
-            return conversation_history
-            
-        except Exception as e:
-            logger.error(f"Error loading conversation history: {str(e)}")
-            return []
-    
-    def _save_conversation_turn(self, customer_id: int, user_message: str, assistant_response: str):
-        """Save a conversation turn (user message + assistant response) to session context"""
-        try:
-            from app.models import ConversationSession
-            
-            # Get current conversation session
-            session = ConversationSession.get_or_create_session(self.db, customer_id)
-            context = session.get_context() or {}
-            
-            # Get or initialize conversation history
-            conversation_history = context.get('conversation_history', [])
-            
-            # Add user message and assistant response
-            conversation_history.append({
-                'role': 'user',
-                'content': user_message,
-                'timestamp': datetime.utcnow().isoformat()
-            })
-            
-            conversation_history.append({
-                'role': 'assistant', 
-                'content': assistant_response,
-                'timestamp': datetime.utcnow().isoformat()
-            })
-            
-            # Keep only last 20 messages (10 turns) to prevent context bloat
-            if len(conversation_history) > 20:
-                conversation_history = conversation_history[-20:]
-            
-            # Update session context
-            context['conversation_history'] = conversation_history
-            session.update_state(session.current_state, context)
-            self.db.commit()
-            
-            if self.settings.ai_debug_mode:
-                logger.info(f"Saved conversation turn for customer {customer_id}")
-                
-        except Exception as e:
-            logger.error(f"Error saving conversation turn: {str(e)}")
-            self.db.rollback()
+    # NOTE: Conversation history management methods removed
+    # LangGraph v0.3+ MemorySaver checkpointer handles conversation persistence automatically
+    # No need for custom _load_conversation_history or _save_conversation_turn methods
     
     def _validate_and_clean_messages(self, messages: List) -> List:
         """

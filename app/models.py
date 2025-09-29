@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import enum
 import json
+import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import JSON, Column, Integer, String, Text, DateTime, Float, Boolean, ForeignKey, Enum, Table, TypeDecorator, UniqueConstraint,func
 from sqlalchemy.orm import relationship, validates
@@ -10,6 +11,8 @@ from app.database import Base
 import re
 import secrets
 import string
+
+logger = logging.getLogger(__name__)
 
 # Enhanced inventory models imported at the end to avoid circular imports
 
@@ -447,13 +450,38 @@ class ConversationSession(Base):
     customer = relationship("Customer", back_populates="conversation_sessions")
     cart_session = relationship("CartSession", foreign_keys=[cart_session_id], back_populates="conversation_session")
 
-    def update_state(self, new_state, context=None):
+    def update_state(self, new_state, context=None, force=False):
         """
-        Update the conversation state and context
+        Update the conversation state and context with validation and recovery
+        
+        Args:
+            new_state: The new state to transition to
+            context: Optional context data to update
+            force: If True, skip validation (for recovery scenarios)
         """
-        self.current_state = (
-            new_state.value if isinstance(new_state, ConversationState) else new_state
-        )
+        # Convert state to enum if needed
+        if isinstance(new_state, str):
+            try:
+                new_state = ConversationState(new_state)
+            except ValueError:
+                logger.error(f"Invalid state string: {new_state}")
+                new_state = ConversationState.IDLE  # Safe fallback
+        
+        current_state = self.current_state
+        
+        # Validate state transition unless forced
+        if not force and not self._is_valid_transition(current_state, new_state):
+            logger.warning(f"Invalid state transition from {current_state} to {new_state} for customer {self.customer_id}")
+            
+            # Attempt recovery
+            recovered_state = self._recover_invalid_state(current_state, new_state)
+            if recovered_state != new_state:
+                logger.info(f"State transition recovered: {new_state} -> {recovered_state}")
+                new_state = recovered_state
+        
+        # Update state and context
+        old_state = self.current_state
+        self.current_state = new_state.value if hasattr(new_state, 'value') else new_state
 
         if context:
             # Update only the provided context fields, preserving existing ones
@@ -462,6 +490,218 @@ class ConversationSession(Base):
             self.context_data = current_context
 
         self.last_interaction = datetime.utcnow()
+        
+        # Log state transition for debugging
+        if old_state != self.current_state:
+            logger.info(f"State transition for customer {self.customer_id}: {old_state} -> {self.current_state}")
+    
+    def _is_valid_transition(self, from_state, to_state):
+        """
+        Validate if a state transition is allowed
+        Implements business logic for valid conversation flows
+        """
+        # Convert to enum values if needed
+        if hasattr(from_state, 'value'):
+            from_state = from_state.value
+        if hasattr(to_state, 'value'):
+            to_state = to_state.value
+        
+        # Define valid state transitions
+        valid_transitions = {
+            ConversationState.INITIAL.value: [
+                ConversationState.WELCOME.value,
+                ConversationState.IDLE.value
+            ],
+            ConversationState.WELCOME.value: [
+                ConversationState.AWAITING_ORDER_DETAILS.value,
+                ConversationState.TRACKING_ORDER.value,
+                ConversationState.WAITING_FOR_SUPPORT.value,
+                ConversationState.IDLE.value
+            ],
+            ConversationState.AWAITING_ORDER_DETAILS.value: [
+                ConversationState.AWAITING_PAYMENT.value,
+                ConversationState.IDLE.value,
+                ConversationState.WAITING_FOR_SUPPORT.value
+            ],
+            ConversationState.AWAITING_PAYMENT.value: [
+                ConversationState.AWAITING_PAYMENT_CONFIRMATION.value,
+                ConversationState.IDLE.value,
+                ConversationState.AWAITING_ORDER_DETAILS.value  # Allow going back to modify order
+            ],
+            ConversationState.AWAITING_PAYMENT_CONFIRMATION.value: [
+                ConversationState.IDLE.value,
+                ConversationState.AWAITING_PAYMENT.value  # Allow going back to payment options
+            ],
+            ConversationState.TRACKING_ORDER.value: [
+                ConversationState.IDLE.value,
+                ConversationState.AWAITING_ORDER_DETAILS.value,  # Allow new order after tracking
+                ConversationState.WAITING_FOR_SUPPORT.value
+            ],
+            ConversationState.WAITING_FOR_SUPPORT.value: [
+                ConversationState.IDLE.value,
+                ConversationState.AWAITING_ORDER_DETAILS.value
+            ],
+            ConversationState.IDLE.value: [
+                # IDLE can transition to any other state (it's the main hub)
+                ConversationState.WELCOME.value,
+                ConversationState.AWAITING_ORDER_DETAILS.value,
+                ConversationState.AWAITING_PAYMENT.value,
+                ConversationState.TRACKING_ORDER.value,
+                ConversationState.WAITING_FOR_SUPPORT.value
+            ]
+        }
+        
+        # Special case: any state can go to IDLE (emergency reset)
+        if to_state == ConversationState.IDLE.value:
+            return True
+        
+        # Check if transition is in valid transitions list
+        allowed_states = valid_transitions.get(from_state, [])
+        return to_state in allowed_states
+    
+    def _recover_invalid_state(self, from_state, attempted_state):
+        """
+        Attempt to recover from invalid state transitions
+        Returns a safe state to transition to instead
+        """
+        # Convert to values if needed
+        if hasattr(from_state, 'value'):
+            from_state = from_state.value
+        if hasattr(attempted_state, 'value'):
+            attempted_state = attempted_state.value
+        
+        # Recovery strategies based on attempted transition
+        recovery_map = {
+            # If trying to go to payment states from invalid states, go to order details first
+            ConversationState.AWAITING_PAYMENT.value: ConversationState.AWAITING_ORDER_DETAILS,
+            ConversationState.AWAITING_PAYMENT_CONFIRMATION.value: ConversationState.AWAITING_PAYMENT,
+            
+            # If trying to go to welcome from anywhere except initial, go to idle instead
+            ConversationState.WELCOME.value: ConversationState.IDLE,
+            
+            # For any other invalid transition, default to IDLE
+        }
+        
+        # Try specific recovery first
+        if attempted_state in recovery_map:
+            recovered_state = recovery_map[attempted_state]
+            
+            # Check if the recovery transition is valid
+            if self._is_valid_transition(from_state, recovered_state):
+                return recovered_state
+        
+        # Last resort: always go to IDLE (safe state)
+        return ConversationState.IDLE
+    
+    def validate_state_consistency(self):
+        """
+        Validate that the current state is consistent with the conversation context
+        Returns a tuple (is_valid, issues, recommended_action)
+        """
+        issues = []
+        current_state = self.current_state
+        context = self.get_context() or {}
+        
+        # Check for state-context mismatches
+        if current_state == ConversationState.AWAITING_PAYMENT:
+            # Should have pending order context
+            if not context.get('pending_order_id') and not context.get('last_order_id'):
+                issues.append("In AWAITING_PAYMENT state but no pending order in context")
+        
+        elif current_state == ConversationState.AWAITING_PAYMENT_CONFIRMATION:
+            # Should have payment method selected
+            if not context.get('selected_payment_method'):
+                issues.append("In AWAITING_PAYMENT_CONFIRMATION but no payment method selected")
+        
+        elif current_state == ConversationState.TRACKING_ORDER:
+            # Should have order tracking context
+            if not context.get('tracking_order_ids') and not context.get('last_tracked_orders'):
+                issues.append("In TRACKING_ORDER state but no tracking context")
+        
+        # Check for stale sessions (inactive for too long)
+        if self.last_interaction:
+            time_since_interaction = datetime.utcnow() - self.last_interaction
+            if time_since_interaction.total_seconds() > 1800:  # 30 minutes
+                issues.append(f"Session inactive for {time_since_interaction.total_seconds()/60:.1f} minutes")
+        
+        # Determine recommended action
+        recommended_action = None
+        if issues:
+            if any("AWAITING_PAYMENT" in issue for issue in issues):
+                recommended_action = "Reset to IDLE and ask user to restart order process"
+            elif any("inactive" in issue for issue in issues):
+                recommended_action = "Reset to WELCOME state for fresh start"
+            else:
+                recommended_action = "Reset to IDLE state"
+        
+        is_valid = len(issues) == 0
+        return is_valid, issues, recommended_action
+    
+    @classmethod
+    def cleanup_stale_sessions(cls, db: Session, max_inactive_hours=24):
+        """
+        Class method to clean up stale conversation sessions and recover invalid states
+        Should be called periodically for system maintenance
+        
+        Returns:
+            dict: Summary of cleanup actions performed
+        """
+        cleanup_summary = {
+            "sessions_checked": 0,
+            "stale_sessions_reset": 0,
+            "invalid_states_recovered": 0,
+            "errors": []
+        }
+        
+        try:
+            # Get all active sessions
+            sessions = db.query(cls).filter(cls.is_active == True).all()
+            cleanup_summary["sessions_checked"] = len(sessions)
+            
+            cutoff_time = datetime.utcnow() - timedelta(hours=max_inactive_hours)
+            
+            for session in sessions:
+                try:
+                    # Check for stale sessions
+                    if session.last_interaction < cutoff_time:
+                        session.update_state(ConversationState.WELCOME, force=True)
+                        cleanup_summary["stale_sessions_reset"] += 1
+                        logger.info(f"Reset stale session for customer {session.customer_id}")
+                        continue
+                    
+                    # Validate state consistency
+                    is_valid, issues, recommended_action = session.validate_state_consistency()
+                    
+                    if not is_valid:
+                        logger.warning(f"Inconsistent state for customer {session.customer_id}: {issues}")
+                        
+                        # Apply recommended recovery action
+                        if "Reset to WELCOME" in recommended_action:
+                            session.update_state(ConversationState.WELCOME, force=True)
+                        elif "Reset to IDLE" in recommended_action:
+                            session.update_state(ConversationState.IDLE, force=True)
+                        else:
+                            session.update_state(ConversationState.IDLE, force=True)
+                        
+                        cleanup_summary["invalid_states_recovered"] += 1
+                        logger.info(f"Recovered invalid state for customer {session.customer_id}")
+                
+                except Exception as e:
+                    error_msg = f"Error processing session {session.id}: {str(e)}"
+                    cleanup_summary["errors"].append(error_msg)
+                    logger.error(error_msg)
+            
+            # Commit all changes
+            db.commit()
+            logger.info(f"Session cleanup completed: {cleanup_summary}")
+            
+        except Exception as e:
+            db.rollback()
+            error_msg = f"Session cleanup failed: {str(e)}"
+            cleanup_summary["errors"].append(error_msg)
+            logger.error(error_msg)
+        
+        return cleanup_summary
 
     def get_context(self):
         """
