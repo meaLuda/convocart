@@ -7,7 +7,8 @@ from typing import Dict, Any, Optional, List, TypedDict, Union, Annotated
 from datetime import datetime
 from enum import Enum
 
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage, add_messages
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
+from langgraph.graph.message import add_messages
 from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, END

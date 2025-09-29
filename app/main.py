@@ -16,7 +16,7 @@ from pathlib import Path
 import uvicorn
 import uuid
 from app.database import SessionLocal, engine, Base, get_db
-from app.routers import users, webhook, data_import, cart_recovery
+from app.routers import users, webhook, data_import, cart_recovery, debug
 from app.config import Settings, get_settings
 from app import models
 from contextlib import asynccontextmanager
@@ -214,6 +214,7 @@ app.include_router(webhook.router, tags=["webhook"])
 app.include_router(admin_router, tags=["admin"])
 app.include_router(data_import.router, tags=["data-import"])
 app.include_router(cart_recovery.router, tags=["cart-recovery"])
+app.include_router(debug.router, tags=["debug"])
 
 # Include DataTables API router
 from app.routers.api_datatables import router as datatables_router

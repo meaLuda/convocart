@@ -76,7 +76,7 @@ class ModernizationValidator:
         try:
             # Check AgentState annotations
             from app.services.ai_agent import AgentState
-            from langchain_core.messages import add_messages
+            from langgraph.graph.message import add_messages
             from typing import get_type_hints, get_origin, get_args
             
             hints = get_type_hints(AgentState)
@@ -340,6 +340,7 @@ class ModernizationValidator:
         try:
             # Check that old memory management is removed
             import app.services.ai_agent as ai_module
+            import inspect
             
             source = inspect.getsource(ai_module)
             

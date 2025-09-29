@@ -183,7 +183,8 @@ class TestLangGraphIntegration:
         """Test that AgentState uses proper LangGraph annotations"""
         # Test the new AgentState structure
         from app.services.ai_agent import AgentState
-        from langchain_core.messages import HumanMessage, add_messages
+        from langchain_core.messages import HumanMessage
+        from langgraph.graph.message import add_messages
         from typing import get_type_hints, get_origin, get_args
         
         # Check that messages field has proper annotation
