@@ -333,6 +333,12 @@ async def handle_ai_agent_response(ai_result: Dict[str, Any], customer, session,
         session.update_state(ConversationState.AWAITING_PAYMENT)
         db.commit()
         
+    elif action == "order_created" and order_data:
+        # AI successfully created an order - process it
+        await create_ai_enhanced_order(phone_number, customer.id, group_id, order_data, db, whatsapp_service)
+        session.update_state(ConversationState.AWAITING_PAYMENT)
+        db.commit()
+        
     elif action == "order_clarification_needed":
         # AI needs more information about the order
         clarification_msg = "I'd like to help you with your order! Could you please provide more details about:\n\n"
@@ -621,10 +627,27 @@ async def handle_customer_message_with_context(customer, event_data, db, current
     
     elif intent == "mpesa_payment":
         # User indicates they want to pay with M-Pesa
-        mpesa_msg = "Please send your payment to our M-Pesa number and then share the transaction message/code/confirmation with us."
-        whatsapp_service.send_text_message(phone_number, mpesa_msg)
-        session.update_state(ConversationState.AWAITING_PAYMENT_CONFIRMATION)
-        db.commit()
+        # Check if user has a pending order that needs payment
+        last_order = db.query(models.Order).filter(
+            models.Order.customer_id == customer.id,
+            models.Order.order_status.in_(['pending', 'confirmed'])
+        ).order_by(models.Order.created_at.desc()).first()
+        
+        if last_order:
+            # User has a pending order, send proper payment instructions
+            payment_instructions = get_mpesa_payment_instructions(group, last_order)
+            whatsapp_service.send_text_message(phone_number, payment_instructions)
+            session.update_state(ConversationState.AWAITING_PAYMENT_CONFIRMATION)
+            db.commit()
+        else:
+            # No pending order, ask user to place order first
+            whatsapp_service.send_text_message(
+                phone_number, 
+                "You don't have any pending orders to pay for. Please place an order first by selecting '1. Place Order' from the menu."
+            )
+            send_default_options(phone_number, whatsapp_service)
+            session.update_state(ConversationState.IDLE)
+            db.commit()
         return
         
     elif intent == "cash_payment":
@@ -672,8 +695,26 @@ async def handle_customer_message_with_context(customer, event_data, db, current
             return
     
     elif current_state == ConversationState.WELCOME:
-        # We sent welcome message but didn't get a valid menu selection
-        # Send default options
+        # Check if user made a valid menu selection
+        intent = detect_customer_intent(message, message_type, button_id, current_state)
+        if intent:
+            # Process the detected intent
+            if intent == "place_order":
+                # User wants to place an order
+                place_order_msg = "Please type your order details, including:\n\n"
+                place_order_msg += "- Item names\n- Quantities\n- Any special requests\n\n"
+                place_order_msg += "Example: '2 red t-shirts size L, 1 black hoodie size XL'"
+                whatsapp_service.send_text_message(phone_number, place_order_msg)
+                session.update_state(ConversationState.AWAITING_ORDER)
+                db.commit()
+                return
+            elif intent == "track_order":
+                await handle_track_order(phone_number, customer.id, db, whatsapp_service)
+                session.update_state(ConversationState.IDLE)
+                db.commit()
+                return
+        
+        # No valid menu selection detected, send default options
         send_default_options(phone_number, whatsapp_service)
         session.update_state(ConversationState.IDLE)
         db.commit()
@@ -714,6 +755,24 @@ def detect_customer_intent(message, message_type, button_id, current_state, comp
     if message_type == "text":
         # Normalize message text
         normalized_message = message.lower().strip()
+        
+        # CRITICAL: Handle numbered menu selections based on conversation state
+        if normalized_message in ["1", "2", "3"]:
+            if current_state == ConversationState.WELCOME:
+                # Menu selections from welcome message
+                if normalized_message == "1":
+                    return "place_order"
+                elif normalized_message == "2":
+                    return "track_order"
+                # Could add "3" for contact support if needed
+            elif current_state == ConversationState.AWAITING_PAYMENT:
+                # Payment method selections
+                if normalized_message == "1":
+                    return "mpesa_payment"
+                elif normalized_message == "2":
+                    return "cash_payment"
+                elif normalized_message == "3":
+                    return "cancel_order"
         
         # Check for order placement intent
         if normalized_message in ["place order", "order", "new order", "i want to order"]:
