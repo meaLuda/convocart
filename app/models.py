@@ -11,6 +11,8 @@ import re
 import secrets
 import string
 
+# Enhanced inventory models imported at the end to avoid circular imports
+
 
 class JsonGettable(TypeDecorator):
     """
@@ -933,5 +935,9 @@ class AbandonmentAnalytics(Base, TimestampMixin):
     
     # Relationships
     group = relationship("Group", backref="abandonment_analytics")
+
+
+# Enhanced inventory models available through separate imports to avoid circular imports
+# Use: from app.models_inventory_enhanced import ModelName when needed
 
 

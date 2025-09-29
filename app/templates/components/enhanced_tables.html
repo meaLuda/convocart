@@ -1,0 +1,873 @@
+<!-- Enhanced Table System with Modal Integration -->
+<!-- This template provides consistent table functionality with row actions -->
+
+<!-- Enhanced Table Container Template -->
+<template id="enhanced-table-template">
+    <div class="enhanced-table-container bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <!-- Table Header -->
+        <div class="table-header bg-gray-50 px-6 py-4 border-b border-gray-200">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between">
+                <div class="table-title-section">
+                    <h3 class="table-title text-lg font-semibold text-gray-900 flex items-center">
+                        <span class="table-icon mr-3 text-blue-600"></span>
+                        <span class="title-text"></span>
+                    </h3>
+                    <p class="table-subtitle text-sm text-gray-600 mt-1"></p>
+                </div>
+                <div class="table-actions flex flex-wrap gap-2 mt-4 lg:mt-0">
+                    <!-- Dynamic action buttons will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Table Filters (Optional) -->
+        <div class="table-filters hidden px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <div class="flex flex-wrap gap-4">
+                <!-- Dynamic filters will be inserted here -->
+            </div>
+        </div>
+
+        <!-- Table Content -->
+        <div class="table-content">
+            <div class="table-scroll overflow-x-auto">
+                <table class="enhanced-table w-full">
+                    <thead class="table-head bg-gray-50">
+                        <!-- Dynamic headers will be inserted here -->
+                    </thead>
+                    <tbody class="table-body bg-white divide-y divide-gray-200">
+                        <!-- Dynamic rows will be inserted here -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Empty State -->
+            <div class="table-empty-state hidden text-center py-12 px-6">
+                <div class="empty-icon w-16 h-16 mx-auto mb-4 text-gray-400">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2 2v-5m16 0h-5.5a2.5 2.5 0 00-2.5 2.5V20"></path>
+                    </svg>
+                </div>
+                <h3 class="empty-title text-lg font-medium text-gray-900 mb-2"></h3>
+                <p class="empty-description text-gray-600 mb-4"></p>
+                <button class="empty-action-btn btn-modal btn-modal-primary hidden">
+                    <span class="empty-action-text"></span>
+                </button>
+            </div>
+
+            <!-- Loading State -->
+            <div class="table-loading-state hidden text-center py-12">
+                <div class="loading-spinner w-8 h-8 mx-auto mb-4 text-blue-600">
+                    <svg class="animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+                <p class="loading-text text-gray-600">Loading data...</p>
+            </div>
+        </div>
+
+        <!-- Table Footer (Pagination, etc.) -->
+        <div class="table-footer hidden px-6 py-4 bg-gray-50 border-t border-gray-200">
+            <div class="flex items-center justify-between">
+                <div class="table-info text-sm text-gray-600">
+                    <!-- Pagination info will be inserted here -->
+                </div>
+                <div class="table-pagination">
+                    <!-- Pagination controls will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- Row Action Dropdown Template -->
+<template id="row-actions-dropdown-template">
+    <div class="relative inline-block text-left">
+        <button class="table-action-btn table-action-more dropdown-toggle" data-dropdown="actions">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01"></path>
+            </svg>
+        </button>
+        <div class="dropdown-menu hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+            <div class="py-1">
+                <!-- Dynamic action items will be inserted here -->
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- Standard Action Button Templates -->
+<template id="action-button-view">
+    <button class="table-action-btn table-action-view" title="View Details">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+        </svg>
+    </button>
+</template>
+
+<template id="action-button-edit">
+    <button class="table-action-btn table-action-edit" title="Edit">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+        </svg>
+    </button>
+</template>
+
+<template id="action-button-delete">
+    <button class="table-action-btn table-action-delete" title="Delete">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+        </svg>
+    </button>
+</template>
+
+<template id="action-button-copy">
+    <button class="table-action-btn table-action-view" title="Copy">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+        </svg>
+    </button>
+</template>
+
+<!-- Status Badge Templates -->
+<template id="status-badge-success">
+    <span class="status-badge status-badge-success"></span>
+</template>
+
+<template id="status-badge-warning">
+    <span class="status-badge status-badge-warning"></span>
+</template>
+
+<template id="status-badge-danger">
+    <span class="status-badge status-badge-danger"></span>
+</template>
+
+<template id="status-badge-info">
+    <span class="status-badge status-badge-info"></span>
+</template>
+
+<template id="status-badge-secondary">
+    <span class="status-badge status-badge-secondary"></span>
+</template>
+
+<style>
+/* Enhanced Table Specific Styles */
+.enhanced-table {
+    @apply min-w-full;
+}
+
+.enhanced-table th {
+    @apply px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+}
+
+.enhanced-table td {
+    @apply px-6 py-4 whitespace-nowrap text-sm;
+}
+
+.enhanced-table tbody tr {
+    @apply transition-colors duration-150 ease-in-out;
+}
+
+.enhanced-table tbody tr:hover {
+    @apply bg-gray-50;
+}
+
+/* Row Selection */
+.enhanced-table tbody tr.selected {
+    @apply bg-blue-50 border-blue-200;
+}
+
+/* Action Buttons Container */
+.table-actions-cell {
+    @apply flex items-center space-x-1;
+}
+
+/* Dropdown Styles */
+.dropdown-menu {
+    @apply transform opacity-0 scale-95 transition-all duration-200 ease-out;
+}
+
+.dropdown-menu.show {
+    @apply opacity-100 scale-100;
+}
+
+.dropdown-item {
+    @apply block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors duration-150;
+}
+
+.dropdown-item.danger {
+    @apply text-red-700 hover:bg-red-50;
+}
+
+.dropdown-divider {
+    @apply h-px bg-gray-200 my-1;
+}
+
+/* Sortable Headers */
+.sortable-header {
+    @apply cursor-pointer select-none hover:bg-gray-100 transition-colors duration-150;
+}
+
+.sortable-header .sort-icon {
+    @apply inline-block w-4 h-4 ml-1 text-gray-400 transition-colors duration-150;
+}
+
+.sortable-header.sort-asc .sort-icon {
+    @apply text-gray-600 transform rotate-180;
+}
+
+.sortable-header.sort-desc .sort-icon {
+    @apply text-gray-600;
+}
+
+/* Filter Styles */
+.table-filter {
+    @apply px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
+}
+
+.table-filter-select {
+    @apply px-3 py-2 pr-8 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white;
+}
+
+/* Responsive Table */
+@media (max-width: 768px) {
+    .enhanced-table th,
+    .enhanced-table td {
+        @apply px-3 py-2;
+    }
+    
+    .table-actions-cell {
+        @apply flex-col space-x-0 space-y-1;
+    }
+}
+
+/* Loading Animation for Rows */
+.table-row-loading {
+    @apply animate-pulse;
+}
+
+.table-row-loading td {
+    @apply bg-gray-100;
+}
+
+/* Sticky Headers */
+.sticky-header th {
+    @apply sticky top-0 z-10 bg-gray-50;
+}
+
+/* Bulk Actions */
+.bulk-actions-bar {
+    @apply hidden bg-blue-50 border-b border-blue-200 px-6 py-3;
+}
+
+.bulk-actions-bar.show {
+    @apply block;
+}
+
+.bulk-actions-text {
+    @apply text-sm text-blue-700 font-medium;
+}
+
+.bulk-action-btn {
+    @apply text-sm text-blue-600 hover:text-blue-800 font-medium ml-4;
+}
+</style>
+
+<script>
+/**
+ * Enhanced Table System with Modal Integration
+ * Provides consistent table functionality across the system
+ */
+class EnhancedTableSystem {
+    constructor() {
+        this.tables = new Map();
+        this.setupGlobalEventListeners();
+    }
+
+    /**
+     * Create a new enhanced table
+     */
+    createTable(containerId, options = {}) {
+        const {
+            title = 'Data Table',
+            subtitle = '',
+            icon = '',
+            columns = [],
+            data = [],
+            actions = [],
+            emptyState = {},
+            pagination = false,
+            sorting = true,
+            filtering = false,
+            selection = false,
+            responsive = true
+        } = options;
+
+        const container = document.getElementById(containerId);
+        if (!container) {
+            console.error(`Container ${containerId} not found`);
+            return null;
+        }
+
+        // Clone template
+        const template = document.getElementById('enhanced-table-template');
+        const tableElement = template.content.cloneNode(true);
+        
+        // Configure table
+        this.configureTable(tableElement, {
+            title, subtitle, icon, columns, data, actions, 
+            emptyState, pagination, sorting, filtering, selection
+        });
+        
+        // Add to container
+        container.appendChild(tableElement);
+        
+        // Create table instance
+        const tableInstance = {
+            id: containerId,
+            element: container.querySelector('.enhanced-table-container'),
+            data: data,
+            columns: columns,
+            actions: actions,
+            selectedRows: new Set(),
+            refresh: () => this.refreshTable(containerId),
+            updateData: (newData) => this.updateTableData(containerId, newData),
+            addRow: (rowData) => this.addTableRow(containerId, rowData),
+            removeRow: (rowId) => this.removeTableRow(containerId, rowId),
+            updateRow: (rowId, rowData) => this.updateTableRow(containerId, rowId, rowData),
+            getSelectedRows: () => Array.from(this.selectedRows),
+            clearSelection: () => this.clearSelection(containerId)
+        };
+        
+        this.tables.set(containerId, tableInstance);
+        return tableInstance;
+    }
+
+    /**
+     * Configure table content and behavior
+     */
+    configureTable(tableElement, options) {
+        const { title, subtitle, icon, columns, data, actions, emptyState } = options;
+        
+        // Set title and subtitle
+        const titleElement = tableElement.querySelector('.title-text');
+        titleElement.textContent = title;
+        
+        if (subtitle) {
+            const subtitleElement = tableElement.querySelector('.table-subtitle');
+            subtitleElement.textContent = subtitle;
+        }
+        
+        // Set icon
+        if (icon) {
+            const iconElement = tableElement.querySelector('.table-icon');
+            iconElement.innerHTML = icon;
+        }
+        
+        // Configure headers
+        this.createTableHeaders(tableElement, columns, options);
+        
+        // Configure data
+        this.createTableRows(tableElement, data, columns, actions);
+        
+        // Configure empty state
+        if (data.length === 0) {
+            this.showEmptyState(tableElement, emptyState);
+        }
+    }
+
+    /**
+     * Create table headers
+     */
+    createTableHeaders(tableElement, columns, options) {
+        const thead = tableElement.querySelector('.table-head');
+        const headerRow = document.createElement('tr');
+        
+        // Selection column
+        if (options.selection) {
+            const selectionHeader = document.createElement('th');
+            selectionHeader.innerHTML = `
+                <input type="checkbox" class="select-all-checkbox rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+            `;
+            headerRow.appendChild(selectionHeader);
+        }
+        
+        // Data columns
+        columns.forEach((column, index) => {
+            const th = document.createElement('th');
+            th.textContent = column.title || column.key;
+            
+            // Add sorting if enabled
+            if (options.sorting && column.sortable !== false) {
+                th.classList.add('sortable-header');
+                th.innerHTML += `
+                    <svg class="sort-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                `;
+                th.addEventListener('click', () => this.sortTable(tableElement, index));
+            }
+            
+            headerRow.appendChild(th);
+        });
+        
+        // Actions column
+        if (options.actions && options.actions.length > 0) {
+            const actionsHeader = document.createElement('th');
+            actionsHeader.textContent = 'Actions';
+            headerRow.appendChild(actionsHeader);
+        }
+        
+        thead.appendChild(headerRow);
+    }
+
+    /**
+     * Create table rows
+     */
+    createTableRows(tableElement, data, columns, actions) {
+        const tbody = tableElement.querySelector('.table-body');
+        tbody.innerHTML = '';
+        
+        data.forEach((row, rowIndex) => {
+            const tr = document.createElement('tr');
+            tr.dataset.rowIndex = rowIndex;
+            tr.dataset.rowId = row.id || rowIndex;
+            
+            // Selection column
+            if (tableElement.querySelector('.select-all-checkbox')) {
+                const selectionCell = document.createElement('td');
+                selectionCell.innerHTML = `
+                    <input type="checkbox" class="row-checkbox rounded border-gray-300 text-blue-600 focus:ring-blue-500" value="${row.id || rowIndex}">
+                `;
+                tr.appendChild(selectionCell);
+            }
+            
+            // Data columns
+            columns.forEach(column => {
+                const td = document.createElement('td');
+                
+                if (column.render) {
+                    td.innerHTML = column.render(row[column.key], row);
+                } else {
+                    td.textContent = row[column.key] || '';
+                }
+                
+                if (column.className) {
+                    td.className += ` ${column.className}`;
+                }
+                
+                tr.appendChild(td);
+            });
+            
+            // Actions column
+            if (actions && actions.length > 0) {
+                const actionsCell = document.createElement('td');
+                actionsCell.className = 'table-actions-cell';
+                actionsCell.appendChild(this.createActionButtons(row, actions));
+                tr.appendChild(actionsCell);
+            }
+            
+            tbody.appendChild(tr);
+        });
+    }
+
+    /**
+     * Create action buttons for a row
+     */
+    createActionButtons(rowData, actions) {
+        const container = document.createElement('div');
+        container.className = 'flex items-center space-x-1';
+        
+        // Show first 3 actions as buttons, rest in dropdown
+        const visibleActions = actions.slice(0, 3);
+        const dropdownActions = actions.slice(3);
+        
+        visibleActions.forEach(action => {
+            const button = this.createActionButton(action, rowData);
+            container.appendChild(button);
+        });
+        
+        // Create dropdown for additional actions
+        if (dropdownActions.length > 0) {
+            const dropdown = this.createActionDropdown(dropdownActions, rowData);
+            container.appendChild(dropdown);
+        }
+        
+        return container;
+    }
+
+    /**
+     * Create individual action button
+     */
+    createActionButton(action, rowData) {
+        const template = document.getElementById(`action-button-${action.type}`);
+        let button;
+        
+        if (template) {
+            button = template.content.cloneNode(true).querySelector('button');
+        } else {
+            button = document.createElement('button');
+            button.className = 'table-action-btn';
+            button.innerHTML = action.icon || '•';
+        }
+        
+        if (action.title) {
+            button.title = action.title;
+        }
+        
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.handleAction(action, rowData);
+        });
+        
+        return button;
+    }
+
+    /**
+     * Create action dropdown
+     */
+    createActionDropdown(actions, rowData) {
+        const template = document.getElementById('row-actions-dropdown-template');
+        const dropdown = template.content.cloneNode(true);
+        const menu = dropdown.querySelector('.dropdown-menu');
+        
+        actions.forEach(action => {
+            const item = document.createElement('button');
+            item.className = `dropdown-item ${action.type === 'delete' ? 'danger' : ''}`;
+            item.textContent = action.title || action.type;
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.handleAction(action, rowData);
+                this.hideDropdown(dropdown);
+            });
+            menu.querySelector('.py-1').appendChild(item);
+        });
+        
+        // Setup dropdown toggle
+        const toggle = dropdown.querySelector('.dropdown-toggle');
+        toggle.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleDropdown(dropdown);
+        });
+        
+        return dropdown;
+    }
+
+    /**
+     * Handle action execution
+     */
+    handleAction(action, rowData) {
+        switch (action.type) {
+            case 'view':
+                this.handleViewAction(action, rowData);
+                break;
+            case 'edit':
+                this.handleEditAction(action, rowData);
+                break;
+            case 'delete':
+                this.handleDeleteAction(action, rowData);
+                break;
+            case 'copy':
+                this.handleCopyAction(action, rowData);
+                break;
+            default:
+                if (action.handler) {
+                    action.handler(rowData);
+                }
+        }
+    }
+
+    /**
+     * Handle view action
+     */
+    handleViewAction(action, rowData) {
+        const endpoint = action.endpoint || action.url;
+        if (endpoint) {
+            const url = this.buildUrl(endpoint, rowData);
+            TableActions.view(url, action.title || 'View Details');
+        }
+    }
+
+    /**
+     * Handle edit action
+     */
+    handleEditAction(action, rowData) {
+        const endpoint = action.endpoint || action.url;
+        if (endpoint) {
+            const url = this.buildUrl(endpoint, rowData);
+            TableActions.edit(url, action.title || 'Edit Item', () => {
+                // Refresh table after successful edit
+                this.refreshTable(this.findTableId(action));
+            });
+        }
+    }
+
+    /**
+     * Handle delete action
+     */
+    handleDeleteAction(action, rowData) {
+        const endpoint = action.endpoint || action.url;
+        if (endpoint) {
+            const url = this.buildUrl(endpoint, rowData);
+            const itemName = action.itemName || 'item';
+            TableActions.delete(url, itemName, () => {
+                // Remove row from table after successful delete
+                this.removeTableRow(this.findTableId(action), rowData.id);
+            });
+        }
+    }
+
+    /**
+     * Handle copy action
+     */
+    handleCopyAction(action, rowData) {
+        const text = action.getText ? action.getText(rowData) : JSON.stringify(rowData);
+        navigator.clipboard.writeText(text).then(() => {
+            TableActions.showToast('success', 'Copied to clipboard');
+        }).catch(() => {
+            TableActions.showToast('error', 'Failed to copy');
+        });
+    }
+
+    /**
+     * Build URL with row data placeholders
+     */
+    buildUrl(template, rowData) {
+        return template.replace(/\{(\w+)\}/g, (match, key) => {
+            return rowData[key] || match;
+        });
+    }
+
+    /**
+     * Show empty state
+     */
+    showEmptyState(tableElement, emptyState) {
+        const table = tableElement.querySelector('.enhanced-table');
+        const emptyStateElement = tableElement.querySelector('.table-empty-state');
+        
+        table.style.display = 'none';
+        emptyStateElement.classList.remove('hidden');
+        
+        if (emptyState.title) {
+            emptyStateElement.querySelector('.empty-title').textContent = emptyState.title;
+        }
+        
+        if (emptyState.description) {
+            emptyStateElement.querySelector('.empty-description').textContent = emptyState.description;
+        }
+        
+        if (emptyState.action) {
+            const actionBtn = emptyStateElement.querySelector('.empty-action-btn');
+            actionBtn.classList.remove('hidden');
+            actionBtn.querySelector('.empty-action-text').textContent = emptyState.action.text;
+            actionBtn.addEventListener('click', emptyState.action.handler);
+        }
+    }
+
+    /**
+     * Toggle dropdown menu
+     */
+    toggleDropdown(dropdown) {
+        const menu = dropdown.querySelector('.dropdown-menu');
+        menu.classList.toggle('show');
+    }
+
+    /**
+     * Hide dropdown menu
+     */
+    hideDropdown(dropdown) {
+        const menu = dropdown.querySelector('.dropdown-menu');
+        menu.classList.remove('show');
+    }
+
+    /**
+     * Setup global event listeners
+     */
+    setupGlobalEventListeners() {
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.dropdown-menu') && !e.target.closest('.dropdown-toggle')) {
+                document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                    menu.classList.remove('show');
+                });
+            }
+        });
+        
+        // Handle bulk selection
+        document.addEventListener('change', (e) => {
+            if (e.target.classList.contains('select-all-checkbox')) {
+                this.handleSelectAll(e.target);
+            } else if (e.target.classList.contains('row-checkbox')) {
+                this.handleRowSelection(e.target);
+            }
+        });
+    }
+
+    /**
+     * Handle select all checkbox
+     */
+    handleSelectAll(checkbox) {
+        const table = checkbox.closest('.enhanced-table-container');
+        const rowCheckboxes = table.querySelectorAll('.row-checkbox');
+        
+        rowCheckboxes.forEach(rowCheckbox => {
+            rowCheckbox.checked = checkbox.checked;
+        });
+        
+        this.updateBulkActions(table);
+    }
+
+    /**
+     * Handle individual row selection
+     */
+    handleRowSelection(checkbox) {
+        const table = checkbox.closest('.enhanced-table-container');
+        this.updateBulkActions(table);
+    }
+
+    /**
+     * Update bulk actions based on selection
+     */
+    updateBulkActions(table) {
+        const selectedCheckboxes = table.querySelectorAll('.row-checkbox:checked');
+        const bulkActionsBar = table.querySelector('.bulk-actions-bar');
+        
+        if (selectedCheckboxes.length > 0) {
+            bulkActionsBar?.classList.add('show');
+            const text = bulkActionsBar?.querySelector('.bulk-actions-text');
+            if (text) {
+                text.textContent = `${selectedCheckboxes.length} item(s) selected`;
+            }
+        } else {
+            bulkActionsBar?.classList.remove('show');
+        }
+    }
+
+    /**
+     * Refresh table data
+     */
+    refreshTable(tableId) {
+        // Trigger a refresh event that can be listened to
+        const event = new CustomEvent('table:refresh', { 
+            detail: { tableId } 
+        });
+        document.dispatchEvent(event);
+    }
+
+    /**
+     * Update table data
+     */
+    updateTableData(tableId, newData) {
+        const table = this.tables.get(tableId);
+        if (table) {
+            table.data = newData;
+            const tableElement = table.element;
+            this.createTableRows(tableElement, newData, table.columns, table.actions);
+        }
+    }
+
+    /**
+     * Find table ID for an action (helper method)
+     */
+    findTableId(action) {
+        // This would need to be implemented based on your specific needs
+        // For now, return the first table ID
+        return this.tables.keys().next().value;
+    }
+}
+
+// Initialize global table system
+window.TableSystem = new EnhancedTableSystem();
+
+/**
+ * Helper function to create common table configurations
+ */
+window.TableHelpers = {
+    /**
+     * Create standard CRUD actions
+     */
+    createCrudActions(baseUrl, options = {}) {
+        const actions = [];
+        
+        if (options.view !== false) {
+            actions.push({
+                type: 'view',
+                title: 'View Details',
+                endpoint: `${baseUrl}/{id}`,
+                ...options.view
+            });
+        }
+        
+        if (options.edit !== false) {
+            actions.push({
+                type: 'edit',
+                title: 'Edit',
+                endpoint: `${baseUrl}/{id}/edit`,
+                ...options.edit
+            });
+        }
+        
+        if (options.delete !== false) {
+            actions.push({
+                type: 'delete',
+                title: 'Delete',
+                endpoint: `${baseUrl}/{id}`,
+                itemName: options.itemName || 'item',
+                ...options.delete
+            });
+        }
+        
+        return actions;
+    },
+
+    /**
+     * Create standard status badge
+     */
+    createStatusBadge(status, type = 'secondary') {
+        const template = document.getElementById(`status-badge-${type}`);
+        const badge = template.content.cloneNode(true).querySelector('span');
+        badge.textContent = status;
+        return badge.outerHTML;
+    },
+
+    /**
+     * Create user avatar cell
+     */
+    createUserCell(user) {
+        return `
+            <div class="flex items-center">
+                <div class="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium">
+                    ${user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                </div>
+                <div class="ml-3">
+                    <div class="text-sm font-medium text-gray-900">${user.name || 'Unknown'}</div>
+                    <div class="text-sm text-gray-500">${user.email || ''}</div>
+                </div>
+            </div>
+        `;
+    },
+
+    /**
+     * Create date cell
+     */
+    createDateCell(date, format = 'short') {
+        const dateObj = new Date(date);
+        const formatted = dateObj.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: format === 'short' ? 'short' : 'long',
+            day: 'numeric'
+        });
+        
+        return `
+            <div class="text-sm text-gray-900">${formatted}</div>
+            <div class="text-sm text-gray-500">${dateObj.toLocaleTimeString('en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            })}</div>
+        `;
+    }
+};
+</script>

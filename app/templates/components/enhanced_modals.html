@@ -1,0 +1,891 @@
+<!-- Enhanced Modal System for Table Row Actions -->
+<!-- This template provides consistent modal components across the system -->
+
+<!-- Base Modal Structure -->
+<template id="base-modal-template">
+    <div class="modal-overlay fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-50 hidden opacity-0 transition-all duration-300 ease-out" style="display: none;">
+        <div class="modal-container flex items-center justify-center min-h-screen p-4">
+            <div class="modal-content bg-white rounded-xl shadow-2xl max-w-lg w-full transform scale-95 transition-all duration-300 ease-out" onclick="event.stopPropagation()">
+                <!-- Modal Header -->
+                <div class="modal-header flex items-center justify-between p-6 border-b border-gray-200">
+                    <div class="modal-title-container flex items-center">
+                        <div class="modal-icon w-8 h-8 mr-3 hidden"></div>
+                        <h3 class="modal-title text-lg font-semibold text-gray-900"></h3>
+                    </div>
+                    <button class="modal-close text-gray-400 hover:text-gray-600 transition-colors duration-200">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                
+                <!-- Modal Body -->
+                <div class="modal-body p-6">
+                    <!-- Dynamic content will be inserted here -->
+                </div>
+                
+                <!-- Modal Footer -->
+                <div class="modal-footer flex justify-end space-x-3 p-6 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+                    <!-- Dynamic buttons will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- Confirmation Modal Template -->
+<template id="confirm-modal-template">
+    <div class="text-center py-4">
+        <div class="confirmation-icon w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.314 18.5c-.77.833.192 2.5 1.732 2.5z"></path>
+            </svg>
+        </div>
+        <h3 class="text-lg font-semibold text-gray-900 mb-2 confirmation-title"></h3>
+        <p class="text-gray-600 confirmation-message"></p>
+    </div>
+</template>
+
+<!-- Form Modal Template -->
+<template id="form-modal-template">
+    <form class="form-modal-form space-y-4">
+        <!-- Dynamic form fields will be inserted here -->
+    </form>
+</template>
+
+<!-- Loading State Template -->
+<template id="loading-template">
+    <div class="loading-state text-center py-8">
+        <div class="loading-spinner w-8 h-8 mx-auto mb-4">
+            <svg class="animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+        <p class="text-gray-600 loading-message">Loading...</p>
+    </div>
+</template>
+
+<!-- Success Message Template -->
+<template id="success-template">
+    <div class="success-state text-center py-6">
+        <div class="success-icon w-16 h-16 mx-auto mb-4 bg-green-100 rounded-full flex items-center justify-center">
+            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+        </div>
+        <h3 class="text-lg font-semibold text-gray-900 mb-2 success-title">Success!</h3>
+        <p class="text-gray-600 success-message"></p>
+    </div>
+</template>
+
+<!-- Error Message Template -->
+<template id="error-template">
+    <div class="error-state text-center py-6">
+        <div class="error-icon w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+            <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+        </div>
+        <h3 class="text-lg font-semibold text-gray-900 mb-2 error-title">Error</h3>
+        <p class="text-gray-600 error-message"></p>
+    </div>
+</template>
+
+<!-- Enhanced Button Styles -->
+<style>
+/* Modal Animation Classes */
+.modal-overlay.show {
+    display: flex !important;
+    opacity: 1;
+}
+
+.modal-overlay {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 9999 !important;
+}
+
+.modal-overlay.show .modal-content {
+    transform: scale(1);
+}
+
+/* Enhanced Button Styles */
+.btn-modal {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+}
+
+.btn-modal-primary {
+    @apply bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+}
+
+.btn-modal-danger {
+    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+}
+
+.btn-modal-success {
+    @apply bg-green-600 text-white hover:bg-green-700 focus:ring-green-500;
+}
+
+.btn-modal-secondary {
+    @apply bg-gray-200 text-gray-800 hover:bg-gray-300 focus:ring-gray-500;
+}
+
+.btn-modal-outline {
+    @apply border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 focus:ring-blue-500;
+}
+
+/* Form Styles */
+.form-group {
+    @apply mb-4;
+}
+
+.form-label {
+    @apply block text-sm font-medium text-gray-700 mb-2;
+}
+
+.form-input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200;
+}
+
+.form-input:invalid {
+    @apply border-red-300 focus:ring-red-500 focus:border-red-500;
+}
+
+.form-textarea {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 resize-vertical;
+}
+
+.form-select {
+    @apply w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200 bg-white;
+}
+
+.form-error {
+    @apply text-red-600 text-sm mt-1;
+}
+
+/* Action Button Styles for Tables */
+.table-action-btn {
+    @apply inline-flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-1;
+}
+
+.table-action-view {
+    @apply text-blue-600 hover:text-blue-800 hover:bg-blue-100 focus:ring-blue-500;
+}
+
+.table-action-edit {
+    @apply text-green-600 hover:text-green-800 hover:bg-green-100 focus:ring-green-500;
+}
+
+.table-action-delete {
+    @apply text-red-600 hover:text-red-800 hover:bg-red-100 focus:ring-red-500;
+}
+
+.table-action-more {
+    @apply text-gray-600 hover:text-gray-800 hover:bg-gray-100 focus:ring-gray-500;
+}
+
+/* Status Badges */
+.status-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.status-badge-success {
+    @apply bg-green-100 text-green-800;
+}
+
+.status-badge-warning {
+    @apply bg-yellow-100 text-yellow-800;
+}
+
+.status-badge-danger {
+    @apply bg-red-100 text-red-800;
+}
+
+.status-badge-info {
+    @apply bg-blue-100 text-blue-800;
+}
+
+.status-badge-secondary {
+    @apply bg-gray-100 text-gray-800;
+}
+
+/* Loading Animation */
+.loading-dots::after {
+    content: '';
+    animation: loading-dots 1.5s infinite;
+}
+
+@keyframes loading-dots {
+    0%, 20% { content: ''; }
+    40% { content: '.'; }
+    60% { content: '..'; }
+    80%, 100% { content: '...'; }
+}
+
+/* Responsive Modal Sizes */
+.modal-sm .modal-content {
+    @apply max-w-sm;
+}
+
+.modal-md .modal-content {
+    @apply max-w-lg;
+}
+
+.modal-lg .modal-content {
+    @apply max-w-2xl;
+}
+
+.modal-xl .modal-content {
+    @apply max-w-4xl;
+}
+
+/* Toast Notifications */
+.toast {
+    @apply fixed top-4 right-4 z-50 transform transition-transform duration-300 ease-in-out translate-x-full;
+}
+
+.toast.show {
+    @apply translate-x-0;
+}
+
+.toast-success {
+    @apply bg-green-500 text-white p-4 rounded-lg shadow-lg;
+}
+
+.toast-error {
+    @apply bg-red-500 text-white p-4 rounded-lg shadow-lg;
+}
+
+.toast-info {
+    @apply bg-blue-500 text-white p-4 rounded-lg shadow-lg;
+}
+
+.toast-warning {
+    @apply bg-yellow-500 text-white p-4 rounded-lg shadow-lg;
+}
+</style>
+
+<script>
+/**
+ * Enhanced Modal System for Table Row Actions
+ * Provides consistent modal functionality across the system
+ */
+class EnhancedModalSystem {
+    constructor() {
+        this.activeModal = null;
+        this.modalStack = [];
+        this.setupEventListeners();
+    }
+
+    /**
+     * Create a new modal instance
+     */
+    createModal(options = {}) {
+        const {
+            type = 'base',
+            size = 'md',
+            title = '',
+            icon = null,
+            content = '',
+            buttons = [],
+            backdrop = true,
+            keyboard = true,
+            animation = true
+        } = options;
+
+        // Clone the base template
+        const template = document.getElementById('base-modal-template');
+        const modalElement = template.content.cloneNode(true);
+        const modal = modalElement.querySelector('.modal-overlay');
+        
+        // Set unique ID
+        const modalId = `modal-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        modal.id = modalId;
+        
+        // Add size class
+        modal.classList.add(`modal-${size}`);
+        
+        // Configure modal
+        this.configureModal(modal, { title, icon, content, buttons, backdrop, keyboard });
+        
+        // Add to DOM
+        document.body.appendChild(modal);
+        
+        return {
+            element: modal,
+            id: modalId,
+            show: () => this.show(modalId),
+            hide: () => this.hide(modalId),
+            destroy: () => this.destroy(modalId),
+            updateContent: (newContent) => this.updateContent(modalId, newContent),
+            updateButtons: (newButtons) => this.updateButtons(modalId, newButtons)
+        };
+    }
+
+    /**
+     * Configure modal content and behavior
+     */
+    configureModal(modal, { title, icon, content, buttons, backdrop, keyboard }) {
+        // Set title
+        const titleElement = modal.querySelector('.modal-title');
+        titleElement.textContent = title;
+        
+        // Set icon
+        if (icon) {
+            const iconElement = modal.querySelector('.modal-icon');
+            iconElement.innerHTML = icon;
+            iconElement.classList.remove('hidden');
+        }
+        
+        // Set content
+        this.updateContent(modal.id, content);
+        
+        // Set buttons
+        this.updateButtons(modal.id, buttons);
+        
+        // Configure backdrop
+        if (backdrop) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    this.hide(modal.id);
+                }
+            });
+        }
+        
+        // Configure keyboard
+        if (keyboard) {
+            modal.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    this.hide(modal.id);
+                }
+            });
+        }
+        
+        // Configure close button
+        const closeButton = modal.querySelector('.modal-close');
+        closeButton.addEventListener('click', () => this.hide(modal.id));
+    }
+
+    /**
+     * Show modal
+     */
+    show(modalId) {
+        const modal = document.getElementById(modalId);
+        if (!modal) return;
+
+        // Add to stack
+        this.modalStack.push(modalId);
+        this.activeModal = modalId;
+        
+        // Show modal with proper display
+        modal.style.display = 'flex';
+        modal.classList.remove('hidden');
+        
+        // Add body class to prevent scrolling
+        document.body.style.overflow = 'hidden';
+        
+        // Focus modal
+        modal.focus();
+        
+        // Trigger animation
+        requestAnimationFrame(() => {
+            modal.classList.add('show');
+        });
+        
+        // Emit event
+        this.emit('modal:show', { modalId, modal });
+    }
+
+    /**
+     * Hide modal
+     */
+    hide(modalId) {
+        const modal = document.getElementById(modalId);
+        if (!modal) return;
+
+        // Remove from stack
+        this.modalStack = this.modalStack.filter(id => id !== modalId);
+        this.activeModal = this.modalStack[this.modalStack.length - 1] || null;
+        
+        // Hide modal
+        modal.classList.remove('show');
+        
+        // Restore body scrolling if no modals are open
+        if (this.modalStack.length === 0) {
+            document.body.style.overflow = '';
+        }
+        
+        // Wait for animation then hide
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            modal.style.display = 'none';
+        }, 300);
+        
+        // Emit event
+        this.emit('modal:hide', { modalId, modal });
+    }
+
+    /**
+     * Destroy modal
+     */
+    destroy(modalId) {
+        this.hide(modalId);
+        setTimeout(() => {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.remove();
+            }
+        }, 300);
+    }
+
+    /**
+     * Update modal content
+     */
+    updateContent(modalId, content) {
+        const modal = document.getElementById(modalId);
+        if (!modal) return;
+
+        const bodyElement = modal.querySelector('.modal-body');
+        if (typeof content === 'string') {
+            bodyElement.innerHTML = content;
+        } else if (content instanceof HTMLElement) {
+            bodyElement.innerHTML = '';
+            bodyElement.appendChild(content);
+        }
+    }
+
+    /**
+     * Update modal buttons
+     */
+    updateButtons(modalId, buttons) {
+        const modal = document.getElementById(modalId);
+        if (!modal) return;
+
+        const footerElement = modal.querySelector('.modal-footer');
+        footerElement.innerHTML = '';
+        
+        buttons.forEach(button => {
+            const buttonElement = document.createElement('button');
+            buttonElement.className = `btn-modal ${button.class || 'btn-modal-secondary'}`;
+            buttonElement.textContent = button.text;
+            
+            if (button.onclick) {
+                buttonElement.addEventListener('click', (e) => {
+                    button.onclick(e, modal);
+                });
+            }
+            
+            footerElement.appendChild(buttonElement);
+        });
+    }
+
+    /**
+     * Setup global event listeners
+     */
+    setupEventListeners() {
+        // Handle escape key globally
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.activeModal) {
+                this.hide(this.activeModal);
+            }
+        });
+    }
+
+    /**
+     * Emit custom events
+     */
+    emit(eventName, data) {
+        const event = new CustomEvent(eventName, { detail: data });
+        document.dispatchEvent(event);
+    }
+
+    /**
+     * Quick confirmation modal
+     */
+    confirm(options = {}) {
+        const {
+            title = 'Confirm Action',
+            message = 'Are you sure you want to proceed?',
+            type = 'warning',
+            confirmText = 'Confirm',
+            cancelText = 'Cancel',
+            onConfirm = () => {},
+            onCancel = () => {}
+        } = options;
+
+        const template = document.getElementById('confirm-modal-template');
+        const content = template.content.cloneNode(true);
+        
+        // Configure confirmation content
+        content.querySelector('.confirmation-title').textContent = title;
+        content.querySelector('.confirmation-message').textContent = message;
+        
+        // Set icon color based on type
+        const iconContainer = content.querySelector('.confirmation-icon');
+        const iconColors = {
+            warning: 'bg-yellow-100 text-yellow-600',
+            danger: 'bg-red-100 text-red-600',
+            info: 'bg-blue-100 text-blue-600'
+        };
+        iconContainer.className += ' ' + (iconColors[type] || iconColors.warning);
+
+        return this.createModal({
+            title: title,
+            content: content,
+            size: 'sm',
+            buttons: [
+                {
+                    text: cancelText,
+                    class: 'btn-modal-outline',
+                    onclick: (e, modal) => {
+                        onCancel();
+                        this.hide(modal.id);
+                    }
+                },
+                {
+                    text: confirmText,
+                    class: type === 'danger' ? 'btn-modal-danger' : 'btn-modal-primary',
+                    onclick: (e, modal) => {
+                        onConfirm();
+                        this.hide(modal.id);
+                    }
+                }
+            ]
+        });
+    }
+
+    /**
+     * Quick form modal
+     */
+    form(options = {}) {
+        const {
+            title = 'Form',
+            fields = [],
+            submitText = 'Submit',
+            cancelText = 'Cancel',
+            onSubmit = () => {},
+            onCancel = () => {}
+        } = options;
+
+        const template = document.getElementById('form-modal-template');
+        const content = template.content.cloneNode(true);
+        const form = content.querySelector('.form-modal-form');
+        
+        // Add fields
+        fields.forEach(field => {
+            const fieldElement = this.createFormField(field);
+            form.appendChild(fieldElement);
+        });
+
+        const modal = this.createModal({
+            title: title,
+            content: content,
+            size: 'md',
+            buttons: [
+                {
+                    text: cancelText,
+                    class: 'btn-modal-outline',
+                    onclick: (e, modal) => {
+                        onCancel();
+                        this.hide(modal.id);
+                    }
+                },
+                {
+                    text: submitText,
+                    class: 'btn-modal-primary',
+                    onclick: (e, modalEl) => {
+                        const formData = this.getFormData(modalEl.id);
+                        if (this.validateForm(modalEl.id)) {
+                            onSubmit(formData);
+                            this.hide(modalEl.id);
+                        }
+                    }
+                }
+            ]
+        });
+
+        return modal;
+    }
+
+    /**
+     * Create form field element
+     */
+    createFormField(field) {
+        const { type, name, label, required, placeholder, options, value } = field;
+        
+        const fieldContainer = document.createElement('div');
+        fieldContainer.className = 'form-group';
+        
+        // Label
+        const labelElement = document.createElement('label');
+        labelElement.className = 'form-label';
+        labelElement.textContent = label + (required ? ' *' : '');
+        labelElement.htmlFor = name;
+        
+        // Input
+        let inputElement;
+        switch (type) {
+            case 'textarea':
+                inputElement = document.createElement('textarea');
+                inputElement.className = 'form-textarea';
+                break;
+            case 'select':
+                inputElement = document.createElement('select');
+                inputElement.className = 'form-select';
+                options.forEach(option => {
+                    const optionElement = document.createElement('option');
+                    optionElement.value = option.value;
+                    optionElement.textContent = option.text;
+                    inputElement.appendChild(optionElement);
+                });
+                break;
+            default:
+                inputElement = document.createElement('input');
+                inputElement.type = type || 'text';
+                inputElement.className = 'form-input';
+        }
+        
+        inputElement.name = name;
+        inputElement.id = name;
+        inputElement.required = required || false;
+        inputElement.placeholder = placeholder || '';
+        if (value !== undefined) inputElement.value = value;
+        
+        fieldContainer.appendChild(labelElement);
+        fieldContainer.appendChild(inputElement);
+        
+        return fieldContainer;
+    }
+
+    /**
+     * Get form data from modal
+     */
+    getFormData(modalId) {
+        const modal = document.getElementById(modalId);
+        const form = modal.querySelector('.form-modal-form');
+        return new FormData(form);
+    }
+
+    /**
+     * Validate form in modal
+     */
+    validateForm(modalId) {
+        const modal = document.getElementById(modalId);
+        const form = modal.querySelector('.form-modal-form');
+        return form.checkValidity();
+    }
+
+    /**
+     * Show loading state
+     */
+    showLoading(modalId, message = 'Loading...') {
+        const template = document.getElementById('loading-template');
+        const content = template.content.cloneNode(true);
+        content.querySelector('.loading-message').textContent = message;
+        this.updateContent(modalId, content);
+    }
+
+    /**
+     * Show success state
+     */
+    showSuccess(modalId, title = 'Success!', message = 'Operation completed successfully.') {
+        const template = document.getElementById('success-template');
+        const content = template.content.cloneNode(true);
+        content.querySelector('.success-title').textContent = title;
+        content.querySelector('.success-message').textContent = message;
+        this.updateContent(modalId, content);
+        this.updateButtons(modalId, [{
+            text: 'Close',
+            class: 'btn-modal-primary',
+            onclick: (e, modal) => this.hide(modal.id)
+        }]);
+    }
+
+    /**
+     * Show error state
+     */
+    showError(modalId, title = 'Error', message = 'An error occurred.') {
+        const template = document.getElementById('error-template');
+        const content = template.content.cloneNode(true);
+        content.querySelector('.error-title').textContent = title;
+        content.querySelector('.error-message').textContent = message;
+        this.updateContent(modalId, content);
+        this.updateButtons(modalId, [{
+            text: 'Close',
+            class: 'btn-modal-outline',
+            onclick: (e, modal) => this.hide(modal.id)
+        }]);
+    }
+}
+
+// Initialize global modal system
+window.ModalSystem = new EnhancedModalSystem();
+
+/**
+ * Table Action Helper Functions
+ */
+window.TableActions = {
+    /**
+     * Show view modal for table row
+     */
+    view(endpoint, title = 'View Details') {
+        const modal = ModalSystem.createModal({
+            title: title,
+            size: 'lg',
+            buttons: [{
+                text: 'Close',
+                class: 'btn-modal-outline',
+                onclick: (e, modal) => ModalSystem.hide(modal.id)
+            }]
+        });
+
+        modal.show();
+        ModalSystem.showLoading(modal.id, 'Loading details...');
+
+        fetch(endpoint)
+            .then(response => response.text())
+            .then(html => {
+                ModalSystem.updateContent(modal.id, html);
+            })
+            .catch(error => {
+                ModalSystem.showError(modal.id, 'Error', 'Failed to load details.');
+            });
+
+        return modal;
+    },
+
+    /**
+     * Show edit modal for table row
+     */
+    edit(endpoint, title = 'Edit Item', onSuccess = () => {}) {
+        const modal = ModalSystem.createModal({
+            title: title,
+            size: 'lg',
+            buttons: [
+                {
+                    text: 'Cancel',
+                    class: 'btn-modal-outline',
+                    onclick: (e, modal) => ModalSystem.hide(modal.id)
+                },
+                {
+                    text: 'Save Changes',
+                    class: 'btn-modal-primary',
+                    onclick: (e, modalEl) => this.submitEditForm(modalEl.id, endpoint, onSuccess)
+                }
+            ]
+        });
+
+        modal.show();
+        ModalSystem.showLoading(modal.id, 'Loading form...');
+
+        fetch(endpoint)
+            .then(response => response.text())
+            .then(html => {
+                ModalSystem.updateContent(modal.id, html);
+            })
+            .catch(error => {
+                ModalSystem.showError(modal.id, 'Error', 'Failed to load form.');
+            });
+
+        return modal;
+    },
+
+    /**
+     * Submit edit form
+     */
+    submitEditForm(modalId, endpoint, onSuccess) {
+        const modal = document.getElementById(modalId);
+        const form = modal.querySelector('form');
+        
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        ModalSystem.showLoading(modalId, 'Saving changes...');
+
+        const formData = new FormData(form);
+        
+        fetch(endpoint, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                ModalSystem.showSuccess(modalId, 'Saved!', 'Changes saved successfully.');
+                setTimeout(() => {
+                    ModalSystem.hide(modalId);
+                    onSuccess(data);
+                }, 1500);
+            } else {
+                ModalSystem.showError(modalId, 'Error', data.message || 'Failed to save changes.');
+            }
+        })
+        .catch(error => {
+            ModalSystem.showError(modalId, 'Error', 'An error occurred while saving.');
+        });
+    },
+
+    /**
+     * Show delete confirmation
+     */
+    delete(endpoint, itemName = 'item', onSuccess = () => {}) {
+        return ModalSystem.confirm({
+            title: 'Delete Confirmation',
+            message: `Are you sure you want to delete this ${itemName}? This action cannot be undone.`,
+            type: 'danger',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            onConfirm: () => {
+                fetch(endpoint, { method: 'DELETE' })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            this.showToast('success', `${itemName} deleted successfully`);
+                            onSuccess(data);
+                        } else {
+                            this.showToast('error', data.message || 'Failed to delete item');
+                        }
+                    })
+                    .catch(error => {
+                        this.showToast('error', 'An error occurred while deleting');
+                    });
+            }
+        });
+    },
+
+    /**
+     * Show toast notification
+     */
+    showToast(type, message) {
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.innerHTML = `
+            <div class="flex items-center">
+                <span class="mr-2">${message}</span>
+                <button onclick="this.parentElement.parentElement.remove()" class="ml-auto">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+        `;
+        
+        document.body.appendChild(toast);
+        
+        // Show toast
+        setTimeout(() => toast.classList.add('show'), 100);
+        
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 5000);
+    }
+};
+</script>

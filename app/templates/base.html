@@ -12,6 +12,8 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <!-- HTMX Extensions -->
     <script src="https://unpkg.com/htmx.org/dist/ext/loading-states.js"></script>
+    <!-- Alpine.js CSP build for reactive components -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.x.x/dist/cdn.min.js"></script>
     <!-- jQuery (required for DataTables) -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
     
@@ -117,134 +119,210 @@
             color: white;
             border-color: #3b82f6;
         }
+
+        /* Modern Navbar Grouping Styles */
+        .navbar-group {
+            @apply flex flex-col space-y-1 relative;
+        }
+
+        .navbar-group:not(:last-child)::after {
+            content: '';
+            @apply absolute -right-4 top-0 h-full w-px bg-primary-400 opacity-30;
+        }
+
+        .navbar-group-header {
+            @apply px-3 py-1 text-xs font-semibold text-primary-200 uppercase tracking-wide mb-1;
+        }
+
+        .navbar-group-title {
+            @apply block;
+        }
+
+        .navbar-group .navbar-link {
+            @apply relative ml-2 pl-2;
+        }
+
+        .navbar-group .navbar-link::before {
+            content: '';
+            @apply absolute left-0 top-1/2 w-1 h-1 bg-primary-300 rounded-full transform -translate-y-1/2 opacity-60;
+        }
+
+        .navbar-group .navbar-link.navbar-link-active::before {
+            @apply bg-white opacity-100 w-2 h-2;
+        }
+
+        /* Responsive adjustments for grouped navbar */
+        @media (max-width: 1024px) {
+            .navbar-group {
+                @apply space-y-0;
+            }
+            
+            .navbar-group:not(:last-child)::after {
+                @apply hidden;
+            }
+            
+            .navbar-group-header {
+                @apply hidden;
+            }
+            
+            .navbar-group .navbar-link {
+                @apply ml-0 pl-0;
+            }
+            
+            .navbar-group .navbar-link::before {
+                @apply hidden;
+            }
+        }
+
+        /* Enhanced navbar visual hierarchy */
+        .navbar-nav {
+            @apply space-x-6;
+        }
+
+        @media (min-width: 1024px) {
+            .navbar-nav {
+                @apply flex items-start space-x-6;
+            }
+        }
     </style>
     {% block head %}{% endblock %}
 </head>
 <body class="flex flex-col min-h-screen bg-gray-50">
-    <header class="navbar">
-        <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center py-4">
-                <a href="/admin/dashboard" class="navbar-brand">
-                    <div class="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+    <header class="bg-gray-800 shadow-lg sticky top-0 z-40" x-data="{ mobileMenuOpen: false }">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center py-3">
+            <div class="flex items-center space-x-4">
+                <a href="/admin/dashboard" class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center">
                         <img src="/static/img/trolley.png" alt="ConvoCart Icon" class="h-6 w-auto">
                     </div>
                     <div>
-                        <span class="font-heading font-bold text-xl">ConvoCart</span>
-                        <div class="text-xs text-primary-100">Admin Panel</div>
+                        <span class="text-white font-bold text-lg">ConvoCart</span>
+                        <div class="text-xs text-gray-400">Admin Panel</div>
                     </div>
                 </a>
-                {% if not admin %}
-                <a href="/admin/login" class="btn btn-outline border-white text-white hover:bg-white hover:text-primary-600">
-                    <i class="fas fa-sign-in-alt mr-2"></i>
-                    Login
-                </a>
-                {% endif %}
-                
-                {% if admin %}
-                <nav class="hidden lg:flex navbar-nav">
-                    <a href="/admin/dashboard" class="navbar-link {{ 'navbar-link-active' if request.url.path == '/admin/dashboard' else '' }}">
-                        <i class="fas fa-tachometer-alt"></i>
-                        <span>Dashboard</span>
-                    </a>
-                    <a href="/admin/orders" class="navbar-link {{ 'navbar-link-active' if request.url.path == '/admin/orders' else '' }}">
-                        <i class="fas fa-shopping-cart"></i>
-                        <span>Orders</span>
-                    </a>
-                    <a href="/admin/groups" class="navbar-link {{ 'navbar-link-active' if request.url.path.startswith('/admin/groups') else '' }}">
-                        <i class="fas fa-users"></i>
-                        <span>Groups</span>
-                    </a>
-                    <a href="/admin/cart-recovery/analytics" class="navbar-link {{ 'navbar-link-active' if request.url.path.startswith('/admin/cart-recovery') else '' }}">
-                        <i class="fas fa-undo-alt"></i>
-                        <span>Cart Recovery</span>
-                    </a>
-                    {% if admin.role.value == 'super_admin' %}
-                    <a href="/admin/users" class="navbar-link {{ 'navbar-link-active' if request.url.path.startswith('/admin/users') else '' }}">
-                        <i class="fas fa-user-cog"></i>
-                        <span>Users</span>
-                    </a>
-                    <a href="/admin/api-usage" class="navbar-link {{ 'navbar-link-active' if request.url.path == '/admin/api-usage' else '' }}">
-                        <i class="fas fa-chart-bar"></i>
-                        <span>Analytics</span>
-                    </a>
-                    {% endif %}
-                    <a href="/admin/settings" class="navbar-link {{ 'navbar-link-active' if request.url.path == '/admin/settings' else '' }}">
-                        <i class="fas fa-cog"></i>
-                        <span>Settings</span>
-                    </a>
-                    
-                    <!-- User Profile Dropdown -->
+            </div>
+
+            <!-- Mobile Menu Button -->
+            <div class="lg:hidden">
+                <button @click="mobileMenuOpen = !mobileMenuOpen" class="text-gray-400 hover:text-white focus:outline-none">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Desktop Navigation -->
+            <nav class="hidden lg:flex items-center space-x-6">
+                <!-- Navigation Groups -->
+                <div class="flex items-center space-x-6">
+                    <!-- Core Operations -->
                     <div class="relative group">
-                        <button class="navbar-link">
-                            <div class="w-8 h-8 bg-primary-700 rounded-lg flex items-center justify-center text-sm font-bold">
-                                {{ admin.username[:1]|upper }}
-                            </div>
-                            <span class="hidden xl:inline">{{ admin.username }}</span>
-                            <i class="fas fa-chevron-down text-xs"></i>
+                        <button class="flex items-center text-white hover:text-white transition-colors duration-200">
+                            <span>Core Operations</span>
+                            <i class="fas fa-chevron-down text-xs ml-2"></i>
                         </button>
-                        <div class="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg py-2 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 z-50">
-                            <div class="px-4 py-2 border-b border-gray-100">
-                                <div class="font-medium text-gray-800">{{ admin.full_name or admin.username }}</div>
-                                <div class="text-sm text-gray-500">{{ admin.role.value|replace('_', ' ')|title }}</div>
-                            </div>
-                            <a href="/admin/logout" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center">
-                                <i class="fas fa-sign-out-alt mr-2"></i>
-                                Logout
-                            </a>
+                        <div class="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-2 opacity-0 group-hover:opacity-100 invisible group-hover:visible transition-all duration-200 z-50">
+                            <a href="/admin/dashboard" class="block px-4 py-2 text-sm text-white hover:bg-gray-600">Dashboard</a>
+                            <a href="/admin/orders" class="block px-4 py-2 text-sm text-white hover:bg-gray-600">Orders</a>
                         </div>
                     </div>
-                </nav>
-                
-                <!-- Mobile menu button -->
-                <button id="mobile-menu-button" class="lg:hidden flex items-center p-2 rounded-xl hover:bg-primary-700 focus:outline-none transition-colors">
-                    <i class="fas fa-bars text-white text-lg"></i>
-                </button>
-                {% endif %}
-            </div>
-            
-            <!-- Mobile menu, show/hide based on menu state -->
-            {% if admin %}
-            <div id="mobile-menu" class="md:hidden hidden pb-3">
-                <div class="flex flex-col space-y-3">
-                    <a href="/admin/dashboard" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path == '/admin/dashboard' else '' }}">
-                        <i class="fas fa-tachometer-alt w-5"></i>
-                        <span>Dashboard</span>
-                    </a>
-                    <a href="/admin/orders" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path == '/admin/orders' else '' }}">
-                        <i class="fas fa-shopping-cart w-5"></i>
-                        <span>Orders</span>
-                    </a>
-                    <a href="/admin/groups" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path.startswith('/admin/groups') else '' }}">
-                        <i class="fas fa-users w-5"></i>
-                        <span>Groups</span>
-                    </a>
-                    <a href="/admin/cart-recovery/analytics" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path.startswith('/admin/cart-recovery') else '' }}">
-                        <i class="fas fa-undo-alt w-5"></i>
-                        <span>Cart Recovery</span>
-                    </a>
-                    {% if admin.role.value == 'super_admin' %}
-                    <a href="/admin/users" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path.startswith('/admin/users') else '' }}">
-                        <i class="fas fa-user-cog w-5"></i>
-                        <span>Users</span>
-                    </a>
-                    <a href="/admin/api-usage" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path == '/admin/api-usage' else '' }}">
-                        <i class="fas fa-chart-bar w-5"></i>
-                        <span>Analytics</span>
-                    </a>
-                    {% endif %}
-                    <a href="/admin/settings" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600 {{ 'bg-primary-600' if request.url.path == '/admin/settings' else '' }}">
-                        <i class="fas fa-cog w-5"></i>
-                        <span>Settings</span>
-                    </a>
-                    <a href="/admin/logout" class="flex items-center space-x-2 py-2 px-3 rounded-md hover:bg-primary-600">
-                        <i class="fas fa-sign-out-alt w-5"></i>
-                        <span>Logout</span>
-                    </a>
+
+                    <!-- Business Management -->
+                    <div class="relative group">
+                        <button class="flex items-center text-white hover:text-white transition-colors duration-200">
+                            <span>Business Management</span>
+                            <i class="fas fa-chevron-down text-xs ml-2"></i>
+                        </button>
+                        <div class="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-2 opacity-0 group-hover:opacity-100 invisible group-hover:visible transition-all duration-200 z-50">
+                            <a href="/admin/groups" class="block px-4 py-2 text-sm text-white hover:bg-gray-600">Groups</a>
+                            <a href="/admin/inventory/dashboard" class="block px-4 py-2 text-sm text-white hover:bg-gray-600">Inventory</a>
+                        </div>
+                    </div>
+
+                    <!-- Analytics -->
+                    <div class="relative group">
+                        <button class="flex items-center text-white hover:text-white transition-colors duration-200">
+                            <span>Analytics</span>
+                            <i class="fas fa-chevron-down text-xs ml-2"></i>
+                        </button>
+                        <div class="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-2 opacity-0 group-hover:opacity-100 invisible group-hover:visible transition-all duration-200 z-50">
+                            <a href="/admin/cart-recovery/analytics" class="block px-4 py-2 text-sm text-white hover:bg-gray-600">Cart Recovery</a>
+                            {% if admin and admin.role.value == 'super_admin' %}
+                            <a href="/admin/api-usage" class="block px-4 py-2 text-sm text-white hover:bg-gray-600">API Usage</a>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- System -->
+                    <div class="relative group">
+                        <button class="flex items-center text-white hover:text-white transition-colors duration-200">
+                            <span>System</span>
+                            <i class="fas fa-chevron-down text-xs ml-2"></i>
+                        </button>
+                        <div class="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-2 opacity-0 group-hover:opacity-100 invisible group-hover:visible transition-all duration-200 z-50">
+                            {% if admin and admin.role.value == 'super_admin' %}
+                            <a href="/admin/users" class="block px-4 py-2 text-sm text-white hover:bg-gray-600">Users</a>
+                            {% endif %}
+                            <a href="/admin/settings" class="block px-4 py-2 text-sm text-white hover:bg-gray-600">Settings</a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User Profile Dropdown -->
+                <div class="relative group">
+                    <button class="flex items-center">
+                        <div class="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-sm font-bold text-white">
+                            {{ admin.username[:1]|upper if admin else 'G' }}
+                        </div>
+                        <span class="hidden xl:inline text-white ml-2">{{ admin.username if admin else 'Guest' }}</span>
+                        <i class="fas fa-chevron-down text-xs text-gray-400 ml-2"></i>
+                    </button>
+                    <div class="absolute right-0 mt-2 w-56 bg-gray-700 rounded-md shadow-lg py-2 opacity-0 group-hover:opacity-100 invisible group-hover:visible transition-all duration-200 z-50">
+                        <div class="px-4 py-3 border-b border-gray-600">
+                            <div class="font-medium text-white">{{ (admin.full_name or admin.username) if admin else 'Guest User' }}</div>
+                            <div class="text-sm text-gray-400">{{ admin.role.value|replace('_', ' ')|title if admin else 'Guest' }}</div>
+                        </div>
+                        <a href="/admin/logout" class="block w-full text-left px-4 py-2 text-sm text-white hover:bg-gray-600">
+                            Logout
+                        </a>
+                    </div>
+                </div>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Mobile Navigation -->
+    <div x-show="mobileMenuOpen" @click.away="mobileMenuOpen = false" class="lg:hidden" x-transition>
+        <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+            <!-- Mobile Navigation Links -->
+            <a href="/admin/dashboard" class="block px-3 py-2 rounded-md text-base font-medium text-white bg-gray-900">Dashboard</a>
+            <a href="/admin/orders" class="block px-3 py-2 rounded-md text-base font-medium text-white hover:text-white hover:bg-gray-700">Orders</a>
+            <a href="/admin/groups" class="block px-3 py-2 rounded-md text-base font-medium text-white hover:text-white hover:bg-gray-700">Groups</a>
+            <a href="/admin/inventory/dashboard" class="block px-3 py-2 rounded-md text-base font-medium text-white hover:text-white hover:bg-gray-700">Inventory</a>
+            <a href="/admin/cart-recovery/analytics" class="block px-3 py-2 rounded-md text-base font-medium text-white hover:text-white hover:bg-gray-700">Cart Recovery</a>
+            {% if admin and admin.role.value == 'super_admin' %}
+            <a href="/admin/api-usage" class="block px-3 py-2 rounded-md text-base font-medium text-white hover:text-white hover:bg-gray-700">API Usage</a>
+            <a href="/admin/users" class="block px-3 py-2 rounded-md text-base font-medium text-white hover:text-white hover:bg-gray-700">Users</a>
+            {% endif %}
+            <a href="/admin/settings" class="block px-3 py-2 rounded-md text-base font-medium text-white hover:text-white hover:bg-gray-700">Settings</a>
+        </div>
+        <div class="pt-4 pb-3 border-t border-gray-700">
+            <div class="flex items-center px-5">
+                <div class="flex-shrink-0">
+                    <div class="w-10 h-10 bg-gray-700 rounded-full flex items-center justify-center text-sm font-bold text-white">
+                        {{ admin.username[:1]|upper if admin else 'G' }}
+                    </div>
+                </div>
+                <div class="ml-3">
+                    <div class="text-base font-medium leading-none text-white">{{ (admin.full_name or admin.username) if admin else 'Guest User' }}</div>
+                    <div class="text-sm font-medium leading-none text-gray-400">{{ admin.role.value|replace('_', ' ')|title if admin else 'Guest' }}</div>
                 </div>
             </div>
-            {% endif %}
+            <div class="mt-3 px-2 space-y-1">
+                <a href="/admin/logout" class="block px-3 py-2 rounded-md text-base font-medium text-white hover:text-white hover:bg-gray-700">Logout</a>
+            </div>
         </div>
-    </header>
+    </div>
+</header>
     
     <!-- Toast Notification Container -->
     <div id="toast-container" class="toast-container"></div>
@@ -280,7 +358,7 @@
         {% block content %}{% endblock %}
     </main>
     
-    <footer class="bg-gray-800 text-gray-300 py-6">
+    <footer class="bg-gray-800 text-white py-6">
         <div class="container mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col md:flex-row md:justify-between items-center">
                 <div class="mb-4 md:mb-0">
@@ -371,7 +449,7 @@
                     <div class="flex-1">
                         <p class="text-sm font-medium text-gray-900">${message}</p>
                     </div>
-                    <button onclick="ToastManager.dismiss(this)" class="flex-shrink-0 text-gray-400 hover:text-gray-600">
+                    <button onclick="ToastManager.dismiss(this)" class="flex-shrink-0 text-gray-400 hover:text-white">
                         <i class="fas fa-times"></i>
                     </button>
                 `;
@@ -539,8 +617,538 @@
         window.validateField = validateField;
         window.dismissAlert = dismissAlert;
         window.getCsrfToken = getCsrfToken;
+
+        // Alpine.js CSP-compatible data components
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('inventoryApp', () => ({
+            showStockModal: false,
+            showDetailsModal: false,
+            showDeleteModal: false,
+            detailsLoading: false,
+            currentProductId: null,
+            currentProductName: null,
+            stockForm: {
+                change_type: '',
+                quantity_change: 1,
+                reason: '',
+                loading: false
+            },
+
+            openStockModal(productId) {
+                this.currentProductId = productId;
+                this.showStockModal = true;
+                this.resetStockForm();
+            },
+
+            closeStockModal() {
+                this.showStockModal = false;
+                this.currentProductId = null;
+                this.resetStockForm();
+            },
+
+            openDetailsModal(productId) {
+                this.currentProductId = productId;
+                this.showDetailsModal = true;
+                this.detailsLoading = true;
+                this.loadProductDetails(productId);
+            },
+
+            closeDetailsModal() {
+                this.showDetailsModal = false;
+                this.currentProductId = null;
+                this.detailsLoading = false;
+            },
+            openDeleteModal(productId, productName) {
+                this.currentProductId = productId;
+                this.currentProductName = productName;
+                this.showDeleteModal = true;
+                document.body.style.overflow = 'hidden';
+            },
+            closeDeleteModal() {
+                this.showDeleteModal = false;
+                this.currentProductId = null;
+                this.currentProductName = null;
+                document.body.style.overflow = '';
+            },
+            async confirmDelete() {
+                if (!this.currentProductId) return;
+                
+                try {
+                    const response = await fetch(`/admin/inventory/product/${this.currentProductId}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': getCsrfToken()
+                        }
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        this.showToast('success', 'Product deleted successfully');
+                        this.closeDeleteModal();
+                        // Refresh DataTables if available
+                        if (window.productsTable) {
+                            window.productsTable.ajax.reload();
+                        } else {
+                            setTimeout(() => location.reload(), 1000);
+                        }
+                    } else {
+                        this.showToast('error', data.message || 'Error deleting product');
+                    }
+                } catch (error) {
+                    console.error('Error deleting product:', error);
+                    this.showToast('error', 'An error occurred while deleting the product');
+                }
+            },
+
+            resetStockForm() {
+                this.stockForm = {
+                    change_type: '',
+                    quantity_change: 1,
+                    reason: '',
+                    loading: false
+                };
+            },
+
+            async loadProductDetails(productId) {
+                try {
+                    const response = await fetch(`/admin/inventory/product/${productId}/details/modal`);
+                    if (response.ok) {
+                        const html = await response.text();
+                        document.getElementById('productDetailsContent').innerHTML = html;
+                    }
+                } catch (error) {
+                    console.error('Error loading product details:', error);
+                } finally {
+                    this.detailsLoading = false;
+                }
+            },
+
+            async submitStockUpdate() {
+                if (!this.currentProductId) return;
+                
+                this.stockForm.loading = true;
+                try {
+                    const formData = new FormData();
+                    formData.append('product_id', this.currentProductId);
+                    formData.append('change_type', this.stockForm.change_type);
+                    formData.append('quantity', this.stockForm.quantity_change);
+                    formData.append('reason', this.stockForm.reason);
+                    
+                    const csrfToken = getCsrfToken();
+                    if (csrfToken) {
+                        formData.append('csrf_token', csrfToken);
+                    }
+
+                    const response = await fetch('/admin/inventory/update-stock', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        this.showToast('success', 'Stock updated successfully');
+                        this.closeStockModal();
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        this.showToast('error', data.message || 'Error updating stock');
+                    }
+                } catch (error) {
+                    console.error('Error updating stock:', error);
+                    this.showToast('error', 'An error occurred while updating stock');
+                } finally {
+                    this.stockForm.loading = false;
+                }
+            },
+            
+            showToast(type, message) {
+                const toast = document.createElement('div');
+                toast.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transform transition-transform duration-300 translate-x-full ${
+                    type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+                }`;
+                toast.innerHTML = `
+                    <div class="flex items-center">
+                        <span class="mr-2">${message}</span>
+                        <button onclick="this.parentElement.parentElement.remove()" class="ml-auto">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                `;
+                
+                document.body.appendChild(toast);
+                
+                // Show toast
+                setTimeout(() => toast.classList.remove('translate-x-full'), 100);
+                
+                // Auto remove after 5 seconds
+                setTimeout(() => {
+                    toast.classList.add('translate-x-full');
+                    setTimeout(() => toast.remove(), 300);
+                }, 5000);
+            },
+            
+            init() {
+                // Handle escape key for modals
+                this.$watch('showStockModal', (show) => {
+                    if (show) {
+                        document.body.style.overflow = 'hidden';
+                        document.addEventListener('keydown', this.handleEscape);
+                    } else {
+                        document.body.style.overflow = '';
+                        document.removeEventListener('keydown', this.handleEscape);
+                    }
+                });
+                
+                this.$watch('showDetailsModal', (show) => {
+                    if (show) {
+                        document.body.style.overflow = 'hidden';
+                        document.addEventListener('keydown', this.handleEscape);
+                    } else {
+                        document.body.style.overflow = '';
+                        document.removeEventListener('keydown', this.handleEscape);
+                    }
+                });
+                
+                this.$watch('showDeleteModal', (show) => {
+                    if (show) {
+                        document.body.style.overflow = 'hidden';
+                        document.addEventListener('keydown', this.handleEscape);
+                    } else {
+                        document.body.style.overflow = '';
+                        document.removeEventListener('keydown', this.handleEscape);
+                    }
+                });
+            },
+            
+            handleEscape(e) {
+                if (e.key === 'Escape') {
+                    if (this.showStockModal) this.closeStockModal();
+                    if (this.showDetailsModal) this.closeDetailsModal();
+                    if (this.showDeleteModal) this.closeDeleteModal();
+                }
+            }
+        }));
+
+        Alpine.data('ordersApp', () => ({
+            showDetailsModal: false,
+            showQuickActionsModal: false,
+            showMessageModal: false,
+            showDeleteModal: false,
+            detailsLoading: false,
+            currentOrderId: null,
+            currentOrderNumber: null,
+            currentCustomerName: null,
+            currentCustomerPhone: null,
+            quickActionsForm: {
+                status: '',
+                payment_status: '',
+                notify_customer: false,
+                loading: false
+            },
+            messageForm: {
+                message: '',
+                loading: false
+            },
+            ordersTable: null,
+
+            openDetailsModal(orderId) {
+                this.currentOrderId = orderId;
+                this.showDetailsModal = true;
+                this.detailsLoading = true;
+                this.loadOrderDetails(orderId);
+            },
+
+            closeDetailsModal() {
+                this.showDetailsModal = false;
+                this.currentOrderId = null;
+                this.detailsLoading = false;
+            },
+
+            openQuickStatusModal(orderId) {
+                this.currentOrderId = orderId;
+                this.showQuickStatusModal = true;
+                this.resetQuickStatusForm();
+            },
+
+            closeQuickStatusModal() {
+                this.showQuickStatusModal = false;
+                this.currentOrderId = null;
+                this.resetQuickStatusForm();
+            },
+
+            resetQuickStatusForm() {
+                this.quickStatusForm = {
+                    status: '',
+                    notify_customer: false,
+                    loading: false
+                };
+            },
+
+            async loadOrderDetails(orderId) {
+                try {
+                    const response = await fetch(`/admin/orders/${orderId}/details/modal`);
+                    if (response.ok) {
+                        const html = await response.text();
+                        document.getElementById('orderDetailsContent').innerHTML = html;
+                    }
+                } catch (error) {
+                    console.error('Error loading order details:', error);
+                } finally {
+                    this.detailsLoading = false;
+                }
+            },
+
+            async submitQuickStatus() {
+                if (!this.currentOrderId) return;
+                
+                this.quickStatusForm.loading = true;
+                try {
+                    const formData = new FormData();
+                    formData.append('status', this.quickStatusForm.status);
+                    formData.append('notify_customer', this.quickStatusForm.notify_customer);
+                    
+                    const csrfToken = getCsrfToken();
+                    if (csrfToken) {
+                        formData.append('csrf_token', csrfToken);
+                    }
+
+                    const response = await fetch(`/admin/orders/${this.currentOrderId}/status/update`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        ToastManager.success('Order status updated successfully');
+                        this.closeQuickStatusModal();
+                        this.refreshOrdersTable();
+                    } else {
+                        const error = await response.text();
+                        ToastManager.error('Failed to update status: ' + error);
+                    }
+                } catch (error) {
+                    ToastManager.error('Error updating status: ' + error.message);
+                } finally {
+                    this.quickStatusForm.loading = false;
+                }
+            },
+
+            async deleteOrder(orderId) {
+                if (!confirm('Are you sure you want to delete this order? This action cannot be undone.')) {
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`/admin/orders/${orderId}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (response.ok) {
+                        ToastManager.success('Order deleted successfully');
+                        this.refreshOrdersTable();
+                    } else {
+                        const error = await response.text();
+                        ToastManager.error('Failed to delete order: ' + error);
+                    }
+                } catch (error) {
+                    ToastManager.error('Error deleting order: ' + error.message);
+                }
+            },
+
+            refreshOrdersTable() {
+                if (this.ordersTable) {
+                    this.ordersTable.ajax.reload(null, false);
+                    this.updateStatusCounts();
+                } else if (window.ordersTable) {
+                    window.ordersTable.ajax.reload(null, false);
+                    this.updateStatusCounts();
+                }
+            },
+
+            updateStatusCounts() {
+                fetch('/api/datatables/orders/status-counts')
+                    .then(response => response.json())
+                    .then(data => {
+                        // Update status count badges if they exist
+                        const badges = {
+                            'pending': document.querySelector('[data-status="pending"] .badge'),
+                            'processing': document.querySelector('[data-status="processing"] .badge'),
+                            'completed': document.querySelector('[data-status="completed"] .badge'),
+                            'cancelled': document.querySelector('[data-status="cancelled"] .badge'),
+                            'refunded': document.querySelector('[data-status="refunded"] .badge')
+                        };
+                        
+                        Object.keys(badges).forEach(status => {
+                            if (badges[status] && data[status] !== undefined) {
+                                badges[status].textContent = data[status];
+                            }
+                        });
+                    })
+                    .catch(error => console.error('Error updating status counts:', error));
+            },
+
+            openQuickActionsModal(orderId, currentStatus, currentPaymentStatus) {
+                this.currentOrderId = orderId;
+                this.quickActionsForm = {
+                    status: currentStatus,
+                    payment_status: currentPaymentStatus,
+                    notify_customer: false,
+                    loading: false
+                };
+                this.showQuickActionsModal = true;
+            },
+
+            closeQuickActionsModal() {
+                this.showQuickActionsModal = false;
+                this.currentOrderId = null;
+                this.resetQuickActionsForm();
+            },
+
+            openMessageModal(orderId, customerName, customerPhone) {
+                this.currentOrderId = orderId;
+                this.currentCustomerName = customerName;
+                this.currentCustomerPhone = customerPhone;
+                this.messageForm = {
+                    message: '',
+                    loading: false
+                };
+                this.showMessageModal = true;
+            },
+
+            closeMessageModal() {
+                this.showMessageModal = false;
+                this.currentOrderId = null;
+                this.currentCustomerName = null;
+                this.currentCustomerPhone = null;
+                this.resetMessageForm();
+            },
+
+            openDeleteModal(orderId, orderNumber) {
+                this.currentOrderId = orderId;
+                this.currentOrderNumber = orderNumber;
+                this.showDeleteModal = true;
+            },
+
+            closeDeleteModal() {
+                this.showDeleteModal = false;
+                this.currentOrderId = null;
+                this.currentOrderNumber = null;
+            },
+
+            resetQuickActionsForm() {
+                this.quickActionsForm = {
+                    status: '',
+                    payment_status: '',
+                    notify_customer: false,
+                    loading: false
+                };
+            },
+
+            resetMessageForm() {
+                this.messageForm = {
+                    message: '',
+                    loading: false
+                };
+            },
+
+            async submitQuickActions() {
+                if (!this.currentOrderId) return;
+                
+                this.quickActionsForm.loading = true;
+                try {
+                    const formData = new FormData();
+                    formData.append('status', this.quickActionsForm.status);
+                    formData.append('payment_status', this.quickActionsForm.payment_status);
+                    formData.append('notify_customer', this.quickActionsForm.notify_customer);
+                    
+                    const csrfToken = getCsrfToken();
+                    if (csrfToken) {
+                        formData.append('csrf_token', csrfToken);
+                    }
+
+                    const response = await fetch(`/admin/orders/${this.currentOrderId}/status`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        ToastManager.success('Order updated successfully');
+                        this.closeQuickActionsModal();
+                        this.refreshOrdersTable();
+                    } else {
+                        const error = await response.text();
+                        ToastManager.error('Failed to update order: ' + error);
+                    }
+                } catch (error) {
+                    ToastManager.error('Error updating order: ' + error.message);
+                } finally {
+                    this.quickActionsForm.loading = false;
+                }
+            },
+
+            async submitMessage() {
+                if (!this.currentOrderId || !this.messageForm.message.trim()) return;
+                
+                this.messageForm.loading = true;
+                try {
+                    const formData = new FormData();
+                    formData.append('message', this.messageForm.message);
+                    formData.append('customer_phone', this.currentCustomerPhone);
+                    formData.append('customer_name', this.currentCustomerName);
+                    
+                    const csrfToken = getCsrfToken();
+                    if (csrfToken) {
+                        formData.append('csrf_token', csrfToken);
+                    }
+
+                    const response = await fetch(`/admin/orders/${this.currentOrderId}/send-message`, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        ToastManager.success('Message sent successfully');
+                        this.closeMessageModal();
+                    } else {
+                        const error = await response.text();
+                        ToastManager.error('Failed to send message: ' + error);
+                    }
+                } catch (error) {
+                    ToastManager.error('Error sending message: ' + error.message);
+                } finally {
+                    this.messageForm.loading = false;
+                }
+            },
+
+            async confirmDelete() {
+                if (!this.currentOrderId) return;
+                
+                try {
+                    const response = await fetch(`/admin/orders/${this.currentOrderId}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (response.ok) {
+                        ToastManager.success('Order deleted successfully');
+                        this.closeDeleteModal();
+                        this.refreshOrdersTable();
+                    } else {
+                        const error = await response.text();
+                        ToastManager.error('Failed to delete order: ' + error);
+                    }
+                } catch (error) {
+                    ToastManager.error('Error deleting order: ' + error.message);
+                }
+            }
+        }));
+        });
     </script>
     
     {% block scripts %}{% endblock %}
+    
+    <!-- Enhanced Modal and Table Components -->
+    {% include "components/enhanced_modals.html" %}
+    {% include "components/enhanced_tables.html" %}
 </body>
 </html>

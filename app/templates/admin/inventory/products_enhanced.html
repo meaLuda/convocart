@@ -1,0 +1,540 @@
+{% extends "base.html" %}
+
+{% block title %}Enhanced Products Inventory | ConvoCart{% endblock %}
+{% block page_title %}Enhanced Products Inventory{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Enhanced Products Table Container -->
+    <div id="products-table-container"></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Create enhanced products table
+    const productsTable = TableSystem.createTable('products-table-container', {
+        title: 'Products Inventory',
+        subtitle: 'Manage product stock levels, pricing, and availability across multiple locations',
+        icon: '<i class="fas fa-boxes"></i>',
+        
+        // Table columns configuration
+        columns: [
+            {
+                key: 'product',
+                title: 'Product',
+                sortable: true,
+                render: (value, row) => `
+                    <div class="flex items-center">
+                        <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white shadow-lg">
+                            <i class="fas fa-box text-lg"></i>
+                        </div>
+                        <div class="ml-4">
+                            <div class="text-sm font-semibold text-gray-900">${row.name}</div>
+                            <div class="text-xs text-gray-500">SKU: ${row.sku || 'N/A'}</div>
+                            ${row.description ? `<div class="text-xs text-gray-400 mt-1 max-w-xs truncate">${row.description}</div>` : ''}
+                        </div>
+                    </div>
+                `
+            },
+            {
+                key: 'group',
+                title: 'Business Group',
+                sortable: true,
+                render: (value, row) => `
+                    <div>
+                        <div class="text-sm font-medium text-gray-900">${row.group_name || 'N/A'}</div>
+                        <div class="text-xs text-gray-500">
+                            ${TableHelpers.createStatusBadge(row.category || 'Uncategorized', 'secondary')}
+                        </div>
+                    </div>
+                `
+            },
+            {
+                key: 'stock_status',
+                title: 'Stock Status',
+                sortable: true,
+                render: (value, row) => {
+                    let badgeType = 'success';
+                    let statusText = 'In Stock';
+                    
+                    if (row.total_stock <= 0) {
+                        badgeType = 'danger';
+                        statusText = 'Out of Stock';
+                    } else if (row.total_stock <= row.low_stock_threshold) {
+                        badgeType = 'warning';
+                        statusText = 'Low Stock';
+                    }
+                    
+                    return `
+                        <div class="flex flex-col">
+                            ${TableHelpers.createStatusBadge(statusText, badgeType)}
+                            <div class="text-xs text-gray-500 mt-1">
+                                Threshold: ${row.low_stock_threshold}
+                            </div>
+                        </div>
+                    `;
+                }
+            },
+            {
+                key: 'current_stock',
+                title: 'Current Stock',
+                sortable: true,
+                className: 'text-center',
+                render: (value, row) => `
+                    <div class="text-center">
+                        <div class="text-lg font-bold text-gray-900">${row.total_stock}</div>
+                        <div class="text-xs text-gray-500">Available</div>
+                        ${row.reserved_stock > 0 ? `<div class="text-xs text-orange-600">${row.reserved_stock} reserved</div>` : ''}
+                    </div>
+                `
+            },
+            {
+                key: 'pricing',
+                title: 'Pricing (KSH)',
+                sortable: true,
+                render: (value, row) => `
+                    <div>
+                        <div class="text-sm font-semibold text-gray-900">
+                            ${Number(row.base_price).toLocaleString('en-KE', { style: 'currency', currency: 'KES' })}
+                        </div>
+                        ${row.sale_price ? `
+                            <div class="text-xs text-green-600">
+                                Sale: ${Number(row.sale_price).toLocaleString('en-KE', { style: 'currency', currency: 'KES' })}
+                            </div>
+                        ` : ''}
+                        ${row.cost_price ? `
+                            <div class="text-xs text-gray-500">
+                                Cost: ${Number(row.cost_price).toLocaleString('en-KE', { style: 'currency', currency: 'KES' })}
+                            </div>
+                        ` : ''}
+                    </div>
+                `
+            },
+            {
+                key: 'locations',
+                title: 'Locations',
+                render: (value, row) => `
+                    <div class="text-center">
+                        <div class="text-sm font-medium text-gray-900">${row.location_count || 1}</div>
+                        <div class="text-xs text-gray-500">
+                            ${row.location_count === 1 ? 'location' : 'locations'}
+                        </div>
+                    </div>
+                `
+            },
+            {
+                key: 'updated_at',
+                title: 'Last Updated',
+                sortable: true,
+                render: (value, row) => TableHelpers.createDateCell(row.updated_at)
+            }
+        ],
+        
+        // Row actions configuration
+        actions: TableHelpers.createCrudActions('/admin/inventory/product', {
+            view: {
+                title: 'View Product Details',
+                endpoint: '/admin/inventory/product/{id}'
+            },
+            edit: {
+                title: 'Edit Product',
+                endpoint: '/admin/inventory/product/{id}/edit'
+            },
+            delete: {
+                title: 'Delete Product',
+                endpoint: '/admin/inventory/product/{id}',
+                itemName: 'product'
+            }
+        }).concat([
+            {
+                type: 'custom',
+                title: 'Update Stock',
+                icon: '<i class="fas fa-plus-circle"></i>',
+                handler: (row) => showStockUpdateModal(row)
+            },
+            {
+                type: 'custom',
+                title: 'Stock History',
+                icon: '<i class="fas fa-history"></i>',
+                handler: (row) => showStockHistoryModal(row)
+            },
+            {
+                type: 'copy',
+                title: 'Copy Product Link',
+                getText: (row) => `${window.location.origin}/admin/inventory/product/${row.id}`
+            }
+        ]),
+        
+        // Sample data (this would come from the backend)
+        data: [
+            {% for item in enhanced_products %}
+            {
+                id: {{ item.product.id }},
+                name: "{{ item.product.name }}",
+                sku: "{{ item.product.sku or '' }}",
+                description: "{{ item.product.description or '' }}",
+                group_name: "{{ item.product.group.name if item.product.group else '' }}",
+                category: "{{ item.product.category.value if item.product.category else '' }}",
+                total_stock: {{ item.total_stock }},
+                reserved_stock: {{ item.availability.reserved_stock if item.availability else 0 }},
+                low_stock_threshold: {{ item.product.low_stock_threshold }},
+                base_price: {{ item.product.base_price }},
+                sale_price: {{ item.product.sale_price or 'null' }},
+                cost_price: {{ item.product.cost_price or 'null' }},
+                location_count: {{ item.availability.locations|length if item.availability else 1 }},
+                updated_at: "{{ item.product.updated_at.isoformat() }}"
+            }{{ ',' if not loop.last else '' }}
+            {% endfor %}
+        ],
+        
+        // Table options
+        sorting: true,
+        filtering: true,
+        selection: true,
+        pagination: true,
+        responsive: true,
+        
+        // Empty state configuration
+        emptyState: {
+            title: 'No products found',
+            description: 'Get started by adding your first product to the inventory.',
+            action: {
+                text: 'Add Your First Product',
+                handler: () => openAddProductModal()
+            }
+        }
+    });
+    
+    // Custom action handlers
+    function showStockUpdateModal(product) {
+        const modal = ModalSystem.form({
+            title: `Update Stock - ${product.name}`,
+            fields: [
+                {
+                    type: 'select',
+                    name: 'change_type',
+                    label: 'Change Type',
+                    required: true,
+                    options: [
+                        { value: 'stock_in', text: 'Stock In (Add)' },
+                        { value: 'stock_out', text: 'Stock Out (Remove)' },
+                        { value: 'adjustment', text: 'Stock Adjustment' },
+                        { value: 'transfer', text: 'Transfer Between Locations' }
+                    ]
+                },
+                {
+                    type: 'number',
+                    name: 'quantity',
+                    label: 'Quantity',
+                    required: true,
+                    placeholder: 'Enter quantity'
+                },
+                {
+                    type: 'text',
+                    name: 'reason',
+                    label: 'Reason',
+                    placeholder: 'e.g., New delivery, Sale, Damaged goods'
+                },
+                {
+                    type: 'select',
+                    name: 'location_id',
+                    label: 'Location',
+                    required: true,
+                    options: [
+                        { value: '1', text: 'Main Warehouse' },
+                        { value: '2', text: 'Store Front' },
+                        { value: '3', text: 'Secondary Storage' }
+                    ]
+                }
+            ],
+            onSubmit: (formData) => {
+                // Handle stock update
+                const data = Object.fromEntries(formData.entries());
+                data.product_id = product.id;
+                
+                fetch('/admin/inventory/update-stock', {
+                    method: 'POST',
+                    body: JSON.stringify(data),
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': getCsrfToken()
+                    }
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        TableActions.showToast('success', 'Stock updated successfully');
+                        productsTable.refresh();
+                    } else {
+                        TableActions.showToast('error', result.message || 'Failed to update stock');
+                    }
+                })
+                .catch(error => {
+                    TableActions.showToast('error', 'Error updating stock');
+                });
+            }
+        });
+        
+        modal.show();
+    }
+    
+    function showStockHistoryModal(product) {
+        const modal = ModalSystem.createModal({
+            title: `Stock History - ${product.name}`,
+            size: 'xl',
+            buttons: [
+                {
+                    text: 'Close',
+                    class: 'btn-modal-outline',
+                    onclick: (e, modal) => ModalSystem.hide(modal.id)
+                }
+            ]
+        });
+        
+        modal.show();
+        ModalSystem.showLoading(modal.id, 'Loading stock history...');
+        
+        fetch(`/admin/inventory/product/${product.id}/stock-history`)
+            .then(response => response.text())
+            .then(html => {
+                ModalSystem.updateContent(modal.id, html);
+            })
+            .catch(error => {
+                ModalSystem.showError(modal.id, 'Error', 'Failed to load stock history');
+            });
+    }
+    
+    function openAddProductModal() {
+        const modal = ModalSystem.form({
+            title: 'Add New Product',
+            fields: [
+                {
+                    type: 'text',
+                    name: 'name',
+                    label: 'Product Name',
+                    required: true,
+                    placeholder: 'Enter product name'
+                },
+                {
+                    type: 'text',
+                    name: 'sku',
+                    label: 'SKU',
+                    placeholder: 'Optional SKU code'
+                },
+                {
+                    type: 'textarea',
+                    name: 'description',
+                    label: 'Description',
+                    placeholder: 'Product description'
+                },
+                {
+                    type: 'select',
+                    name: 'category',
+                    label: 'Category',
+                    required: true,
+                    options: [
+                        { value: 'food', text: 'Food' },
+                        { value: 'beverages', text: 'Beverages' },
+                        { value: 'clothing', text: 'Clothing' },
+                        { value: 'accessories', text: 'Accessories' },
+                        { value: 'physical_product', text: 'Physical Product' },
+                        { value: 'service', text: 'Service' }
+                    ]
+                },
+                {
+                    type: 'number',
+                    name: 'base_price',
+                    label: 'Base Price (KSH)',
+                    required: true,
+                    placeholder: '0.00'
+                },
+                {
+                    type: 'number',
+                    name: 'cost_price',
+                    label: 'Cost Price (KSH)',
+                    placeholder: '0.00'
+                },
+                {
+                    type: 'number',
+                    name: 'low_stock_threshold',
+                    label: 'Low Stock Threshold',
+                    required: true,
+                    value: '5'
+                },
+                {
+                    type: 'number',
+                    name: 'initial_stock',
+                    label: 'Initial Stock Quantity',
+                    required: true,
+                    value: '0'
+                }
+            ],
+            onSubmit: (formData) => {
+                fetch('/admin/inventory/products', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        TableActions.showToast('success', 'Product added successfully');
+                        productsTable.refresh();
+                    } else {
+                        TableActions.showToast('error', result.message || 'Failed to add product');
+                    }
+                })
+                .catch(error => {
+                    TableActions.showToast('error', 'Error adding product');
+                });
+            }
+        });
+        
+        modal.show();
+    }
+    
+    // Listen for table refresh events
+    document.addEventListener('table:refresh', function(e) {
+        if (e.detail.tableId === 'products-table-container') {
+            // Reload the page or fetch new data
+            window.location.reload();
+        }
+    });
+    
+    // Add quick filters
+    const tableElement = document.querySelector('#products-table-container .enhanced-table-container');
+    if (tableElement) {
+        const filtersContainer = tableElement.querySelector('.table-filters');
+        filtersContainer.classList.remove('hidden');
+        filtersContainer.innerHTML = `
+            <div class="flex flex-wrap gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Filter by Group</label>
+                    <select class="table-filter-select" onchange="filterTable('group', this.value)">
+                        <option value="">All Groups</option>
+                        {% for group in groups %}
+                        <option value="{{ group.name }}">{{ group.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Filter by Status</label>
+                    <select class="table-filter-select" onchange="filterTable('status', this.value)">
+                        <option value="">All Status</option>
+                        <option value="in_stock">In Stock</option>
+                        <option value="low_stock">Low Stock</option>
+                        <option value="out_of_stock">Out of Stock</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Search Products</label>
+                    <input type="text" class="table-filter" placeholder="Search by name or SKU..." onkeyup="filterTable('search', this.value)">
+                </div>
+                <div class="flex items-end">
+                    <button class="btn-modal btn-modal-primary" onclick="openAddProductModal()">
+                        <i class="fas fa-plus mr-2"></i>Add Product
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Filter functionality
+    window.filterTable = function(type, value) {
+        // Implement filtering logic here
+        console.log(`Filtering by ${type}: ${value}`);
+    };
+});
+</script>
+
+<style>
+/* Additional custom styles for enhanced products table */
+.enhanced-table tbody tr:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.enhanced-table .table-actions-cell .table-action-btn {
+    opacity: 0.6;
+    transition: all 0.2s ease;
+}
+
+.enhanced-table tbody tr:hover .table-action-btn {
+    opacity: 1;
+}
+
+/* Stock status animations */
+.status-badge-success {
+    animation: pulse-success 2s infinite;
+}
+
+.status-badge-warning {
+    animation: pulse-warning 2s infinite;
+}
+
+.status-badge-danger {
+    animation: pulse-danger 2s infinite;
+}
+
+@keyframes pulse-success {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+    50% { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+}
+
+@keyframes pulse-warning {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+    50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0); }
+}
+
+@keyframes pulse-danger {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+}
+
+/* Loading states for table rows */
+.table-row-loading {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: loading-shimmer 1.5s infinite;
+}
+
+@keyframes loading-shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+/* Enhanced button hover effects */
+.btn-modal:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn-modal:active {
+    transform: translateY(0);
+}
+
+/* Form enhancements */
+.form-input:focus {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Toast enhancements */
+.toast {
+    backdrop-filter: blur(8px);
+    border-left: 4px solid currentColor;
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+    .enhanced-table th,
+    .enhanced-table td {
+        padding: 0.5rem 0.25rem;
+        font-size: 0.875rem;
+    }
+    
+    .enhanced-table .table-actions-cell {
+        min-width: 120px;
+    }
+}
+</style>
+{% endblock %}

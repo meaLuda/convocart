@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+    <!-- Header -->
+    <div class="mb-8">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900">Add New Product</h1>
+                <p class="mt-2 text-sm text-gray-600">Create a new product in your inventory</p>
+            </div>
+            <div class="flex space-x-3">
+                <a href="/admin/inventory/products" 
+                   class="btn-modal btn-modal-outline">
+                    <i class="fas fa-arrow-left mr-2"></i>
+                    Back to Products
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Form -->
+    <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Product Information</h2>
+            <p class="text-sm text-gray-600 mt-1">Enter the details for the new product</p>
+        </div>
+        
+        <form id="product-add-form" method="POST" action="/admin/inventory/products/add" class="p-6 space-y-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            
+            <!-- Product Name -->
+            <div class="form-group">
+                <label for="name" class="form-label">
+                    Product Name <span class="text-red-500">*</span>
+                </label>
+                <input type="text" 
+                       id="name" 
+                       name="name" 
+                       class="form-input" 
+                       required 
+                       placeholder="Enter product name">
+                <p class="text-xs text-gray-500 mt-1">The display name for this product</p>
+            </div>
+
+            <!-- Description -->
+            <div class="form-group">
+                <label for="description" class="form-label">Description</label>
+                <textarea id="description" 
+                          name="description" 
+                          rows="3"
+                          class="form-textarea" 
+                          placeholder="Enter product description"></textarea>
+                <p class="text-xs text-gray-500 mt-1">Optional detailed description of the product</p>
+            </div>
+
+            <!-- Group Selection -->
+            <div class="form-group">
+                <label for="group_id" class="form-label">
+                    Business Group <span class="text-red-500">*</span>
+                </label>
+                <select id="group_id" name="group_id" class="form-select" required>
+                    <option value="">Select a business group</option>
+                    {% for group in groups %}
+                    <option value="{{ group.id }}">{{ group.name }}</option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Which business group this product belongs to</p>
+            </div>
+
+            <!-- Pricing Section -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Base Price -->
+                <div class="form-group">
+                    <label for="base_price" class="form-label">
+                        Base Price (KSh) <span class="text-red-500">*</span>
+                    </label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <span class="text-gray-500 sm:text-sm">KSh</span>
+                        </div>
+                        <input type="number" 
+                               id="base_price" 
+                               name="base_price" 
+                               step="0.01" 
+                               min="0"
+                               class="form-input pl-12" 
+                               required 
+                               placeholder="0.00">
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">The standard selling price</p>
+                </div>
+
+                <!-- Cost Price -->
+                <div class="form-group">
+                    <label for="cost_price" class="form-label">Cost Price (KSh)</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <span class="text-gray-500 sm:text-sm">KSh</span>
+                        </div>
+                        <input type="number" 
+                               id="cost_price" 
+                               name="cost_price" 
+                               step="0.01" 
+                               min="0"
+                               class="form-input pl-12" 
+                               placeholder="0.00">
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Your cost to purchase this product</p>
+                </div>
+            </div>
+
+            <!-- Inventory Settings -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Low Stock Threshold -->
+                <div class="form-group">
+                    <label for="low_stock_threshold" class="form-label">Low Stock Threshold</label>
+                    <input type="number" 
+                           id="low_stock_threshold" 
+                           name="low_stock_threshold" 
+                           value="5"
+                           min="0"
+                           class="form-input" 
+                           placeholder="5">
+                    <p class="text-xs text-gray-500 mt-1">Alert when stock falls below this number</p>
+                </div>
+
+                <!-- Category -->
+                <div class="form-group">
+                    <label for="category" class="form-label">Category</label>
+                    <select id="category" name="category" class="form-select">
+                        <option value="">Select a category</option>
+                        {% for cat in available_categories %}
+                        <option value="{{ cat }}">{{ cat.replace('_', ' ').title() }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Product category for organization</p>
+                </div>
+            </div>
+
+            <!-- Profit Calculation Display -->
+            <div id="profit-display" class="bg-green-50 p-4 rounded-lg hidden">
+                <h3 class="text-sm font-medium text-green-900 mb-2">Profit Analysis</h3>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <div>
+                        <span class="text-green-700 font-medium">Profit per Unit:</span>
+                        <div class="text-green-900 font-semibold" id="profit-amount">KSh 0.00</div>
+                    </div>
+                    <div>
+                        <span class="text-green-700 font-medium">Profit Margin:</span>
+                        <div class="text-green-900 font-semibold" id="profit-margin">0.0%</div>
+                    </div>
+                    <div>
+                        <span class="text-green-700 font-medium">Markup:</span>
+                        <div class="text-green-900 font-semibold" id="markup-percentage">0.0%</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="flex items-center justify-end pt-6 border-t border-gray-200 space-x-3">
+                <a href="/admin/inventory/products" 
+                   class="btn-modal btn-modal-outline">
+                    Cancel
+                </a>
+                
+                <button type="submit" 
+                        class="btn-modal btn-modal-primary"
+                        id="create-button">
+                    <i class="fas fa-plus mr-2"></i>
+                    Create Product
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Enhanced Modal and Table Components -->
+{% include 'components/enhanced_modals.html' %}
+{% include 'components/enhanced_tables.html' %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('product-add-form');
+    const createButton = document.getElementById('create-button');
+    const basePriceInput = document.getElementById('base_price');
+    const costPriceInput = document.getElementById('cost_price');
+    const profitDisplay = document.getElementById('profit-display');
+    
+    // Form submission handler
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Validate required fields
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        
+        // Show loading state
+        createButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating...';
+        createButton.disabled = true;
+        
+        // Create form data
+        const formData = new FormData(form);
+        
+        // Submit via fetch
+        fetch(form.action, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Show success message
+                TableActions.showToast('success', 'Product created successfully');
+                
+                // Reset button
+                createButton.innerHTML = '<i class="fas fa-plus mr-2"></i>Create Product';
+                createButton.disabled = false;
+                
+                // Redirect to products list after a delay
+                setTimeout(() => {
+                    window.location.href = '/admin/inventory/products';
+                }, 1500);
+            } else {
+                throw new Error(data.message || 'Failed to create product');
+            }
+        })
+        .catch(error => {
+            TableActions.showToast('error', error.message || 'An error occurred');
+            
+            // Reset button
+            createButton.innerHTML = '<i class="fas fa-plus mr-2"></i>Create Product';
+            createButton.disabled = false;
+        });
+    });
+    
+    // Calculate and display profit information
+    function updateProfitDisplay() {
+        const basePrice = parseFloat(basePriceInput.value) || 0;
+        const costPrice = parseFloat(costPriceInput.value) || 0;
+        
+        if (basePrice > 0 && costPrice > 0) {
+            const profit = basePrice - costPrice;
+            const margin = ((profit / basePrice) * 100);
+            const markup = ((profit / costPrice) * 100);
+            
+            // Update display
+            document.getElementById('profit-amount').textContent = `KSh ${profit.toFixed(2)}`;
+            document.getElementById('profit-margin').textContent = `${margin.toFixed(1)}%`;
+            document.getElementById('markup-percentage').textContent = `${markup.toFixed(1)}%`;
+            
+            // Show profit display
+            profitDisplay.classList.remove('hidden');
+            
+            // Color-code based on margin
+            profitDisplay.className = 'p-4 rounded-lg';
+            if (margin >= 30) {
+                profitDisplay.classList.add('bg-green-50');
+                profitDisplay.querySelector('h3').className = 'text-sm font-medium text-green-900 mb-2';
+            } else if (margin >= 15) {
+                profitDisplay.classList.add('bg-yellow-50');
+                profitDisplay.querySelector('h3').className = 'text-sm font-medium text-yellow-900 mb-2';
+            } else {
+                profitDisplay.classList.add('bg-red-50');
+                profitDisplay.querySelector('h3').className = 'text-sm font-medium text-red-900 mb-2';
+            }
+        } else {
+            profitDisplay.classList.add('hidden');
+        }
+    }
+    
+    basePriceInput.addEventListener('input', updateProfitDisplay);
+    costPriceInput.addEventListener('input', updateProfitDisplay);
+    
+    // Auto-generate product name suggestions based on category
+    const categorySelect = document.getElementById('category');
+    const nameInput = document.getElementById('name');
+    
+    categorySelect.addEventListener('change', function() {
+        if (nameInput.value === '' && this.value) {
+            const category = this.value.replace('_', ' ');
+            nameInput.placeholder = `Enter ${category.toLowerCase()} name`;
+        }
+    });
+    
+    // Validate prices
+    basePriceInput.addEventListener('blur', function() {
+        const value = parseFloat(this.value) || 0;
+        if (value <= 0) {
+            this.setCustomValidity('Base price must be greater than 0');
+        } else {
+            this.setCustomValidity('');
+        }
+    });
+    
+    costPriceInput.addEventListener('blur', function() {
+        const basePrice = parseFloat(basePriceInput.value) || 0;
+        const costPrice = parseFloat(this.value) || 0;
+        
+        if (costPrice > 0 && basePrice > 0 && costPrice >= basePrice) {
+            TableActions.showToast('warning', 'Cost price is equal to or higher than selling price');
+        }
+    });
+});
+</script>
+{% endblock %}

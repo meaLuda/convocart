@@ -8,6 +8,7 @@
 <!-- Hidden CSRF token for JavaScript -->
 <input type="hidden" id="csrf_token" value="{{ csrf_token }}">
 
+<div x-data="ordersApp">
 <!-- Modern Header with Actions -->
 <div class="mb-6">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -103,6 +104,9 @@
                         </th>
                         {% endif %}
                         <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Products
+                        </th>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             Status
                         </th>
                         <th scope="col" class="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -126,6 +130,244 @@
         </div>
     </div>
 </div>
+
+<!-- Alpine.js Order Details Modal -->
+<div x-show="showDetailsModal" 
+     x-transition:enter="transition ease-out duration-300"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-200"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+     @click.self="closeDetailsModal"
+     style="display: none;">
+    
+    <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-screen overflow-hidden">
+        <div class="flex items-center justify-between p-4 border-b">
+            <h3 class="text-lg font-semibold">Order Details</h3>
+            <button @click="closeDetailsModal" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">
+                &times;
+            </button>
+        </div>
+        
+        <div class="p-4 overflow-y-auto max-h-96">
+            <div x-show="detailsLoading" class="text-center py-8">
+                <i class="fas fa-spinner fa-spin text-2xl text-gray-400 mb-2"></i>
+                <p class="text-gray-600">Loading order details...</p>
+            </div>
+            
+            <div id="orderDetailsContent" x-show="!detailsLoading">
+                <!-- Dynamic content loaded here -->
+            </div>
+        </div>
+        
+        <div class="flex justify-end space-x-2 p-4 border-t">
+            <button @click="closeDetailsModal" class="btn btn-outline">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Quick Actions Modal -->
+<div x-show="showQuickActionsModal" 
+     x-transition:enter="transition ease-out duration-300"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-200"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+     @click.self="closeQuickActionsModal"
+     style="display: none;">
+    
+    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
+        <div class="flex items-center justify-between p-4 border-b">
+            <h3 class="text-lg font-semibold text-gray-900">
+                <i class="fas fa-edit text-green-600 mr-2"></i>Quick Actions
+            </h3>
+            <button @click="closeQuickActionsModal" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">
+                &times;
+            </button>
+        </div>
+        
+        <div class="p-6">
+            <form @submit.prevent="submitQuickActions">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <!-- Order Status -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-flag text-blue-500 mr-1"></i>Order Status
+                        </label>
+                        <select x-model="quickActionsForm.status" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                            <option value="pending">Pending</option>
+                            <option value="processing">Processing</option>
+                            <option value="completed">Completed</option>
+                            <option value="cancelled">Cancelled</option>
+                            <option value="refunded">Refunded</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Payment Status -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-credit-card text-green-500 mr-1"></i>Payment Status
+                        </label>
+                        <select x-model="quickActionsForm.payment_status" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                            <option value="unpaid">Unpaid</option>
+                            <option value="paid">Paid</option>
+                            <option value="verified">Verified</option>
+                            <option value="failed">Failed</option>
+                            <option value="refunded">Refunded</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Notification Option -->
+                <div class="mb-6">
+                    <label class="flex items-center bg-blue-50 p-3 rounded-md">
+                        <input type="checkbox" x-model="quickActionsForm.notify_customer" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                        <span class="ml-3 text-sm text-gray-700">
+                            <i class="fas fa-bell text-blue-500 mr-1"></i>Notify Customer via SMS/WhatsApp
+                        </span>
+                    </label>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="flex justify-end space-x-3">
+                    <button type="button" @click="closeQuickActionsModal" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors flex items-center" :disabled="quickActionsForm.loading">
+                        <span x-show="!quickActionsForm.loading">
+                            <i class="fas fa-save mr-2"></i>Update Order
+                        </span>
+                        <span x-show="quickActionsForm.loading">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>Updating...
+                        </span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Send Message Modal -->
+<div x-show="showMessageModal" 
+     x-transition:enter="transition ease-out duration-300"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-200"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+     @click.self="closeMessageModal"
+     style="display: none;">
+    
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="flex items-center justify-between p-4 border-b">
+            <h3 class="text-lg font-semibold text-gray-900">
+                <i class="fas fa-message text-purple-600 mr-2"></i>Send Message
+            </h3>
+            <button @click="closeMessageModal" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">
+                &times;
+            </button>
+        </div>
+        
+        <div class="p-6">
+            <form @submit.prevent="submitMessage">
+                <!-- Customer Info -->
+                <div class="mb-4 p-3 bg-purple-50 rounded-md">
+                    <div class="text-sm text-gray-600">Sending to:</div>
+                    <div class="font-medium text-gray-900" x-text="currentCustomerName"></div>
+                    <div class="text-sm text-purple-600" x-text="currentCustomerPhone"></div>
+                </div>
+                
+                <!-- Message Input -->
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-edit text-purple-500 mr-1"></i>Your Message
+                    </label>
+                    <textarea x-model="messageForm.message" 
+                              rows="4" 
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500" 
+                              placeholder="Type your message to the customer..."
+                              required></textarea>
+                    <div class="text-xs text-gray-500 mt-1">Message will be sent via WhatsApp/SMS</div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="flex justify-end space-x-3">
+                    <button type="button" @click="closeMessageModal" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-6 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors flex items-center" :disabled="messageForm.loading">
+                        <span x-show="!messageForm.loading">
+                            <i class="fas fa-paper-plane mr-2"></i>Send Message
+                        </span>
+                        <span x-show="messageForm.loading">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>Sending...
+                        </span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div x-show="showDeleteModal" 
+     x-transition:enter="transition ease-out duration-300"
+     x-transition:enter-start="opacity-0"
+     x-transition:enter-end="opacity-100"
+     x-transition:leave="transition ease-in duration-200"
+     x-transition:leave-start="opacity-100"
+     x-transition:leave-end="opacity-0"
+     class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+     @click.self="closeDeleteModal"
+     style="display: none;">
+    
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="flex items-center justify-between p-4 border-b">
+            <h3 class="text-lg font-semibold text-red-900">
+                <i class="fas fa-exclamation-triangle text-red-600 mr-2"></i>Confirm Delete
+            </h3>
+            <button @click="closeDeleteModal" class="text-gray-400 hover:text-gray-600 text-2xl font-bold">
+                &times;
+            </button>
+        </div>
+        
+        <div class="p-6">
+            <div class="mb-6">
+                <div class="text-center">
+                    <div class="text-red-500 text-6xl mb-4">
+                        <i class="fas fa-trash-alt"></i>
+                    </div>
+                    <p class="text-gray-900 mb-2">Are you sure you want to delete this order?</p>
+                    <p class="text-sm text-gray-600 mb-4">
+                        Order: <span class="font-mono font-bold" x-text="currentOrderNumber"></span>
+                    </p>
+                    <div class="bg-red-50 border border-red-200 rounded-md p-3">
+                        <p class="text-red-700 text-sm">
+                            <i class="fas fa-warning mr-1"></i>
+                            This action cannot be undone. All order data will be permanently removed.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="flex justify-end space-x-3">
+                <button type="button" @click="closeDeleteModal" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors">
+                    Cancel
+                </button>
+                <button @click="confirmDelete" class="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors flex items-center">
+                    <i class="fas fa-trash-alt mr-2"></i>Delete Order
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -141,7 +383,7 @@ $(document).ready(function() {
     }
 
     // Initialize enhanced DataTables with modern settings
-    const ordersTable = $('#orders-table').DataTable({
+    window.ordersTable = $('#orders-table').DataTable({
         processing: true,
         serverSide: true,
         ajax: {
@@ -180,26 +422,31 @@ $(document).ready(function() {
             {% endif %}
             { 
                 data: {% if admin.role.value == 'super_admin' %}3{% else %}2{% endif %}, 
-                orderable: true,
-                className: 'px-6 py-4'
-            },
-            { 
-                data: {% if admin.role.value == 'super_admin' %}4{% else %}3{% endif %}, 
                 orderable: false,
                 className: 'px-6 py-4'
             },
             { 
-                data: {% if admin.role.value == 'super_admin' %}5{% else %}4{% endif %}, 
-                orderable: true,
-                className: 'px-6 py-4 text-right'
-            },
-            { 
-                data: {% if admin.role.value == 'super_admin' %}6{% else %}5{% endif %}, 
+                data: {% if admin.role.value == 'super_admin' %}4{% else %}3{% endif %}, 
                 orderable: true,
                 className: 'px-6 py-4'
             },
             { 
+                data: {% if admin.role.value == 'super_admin' %}5{% else %}4{% endif %}, 
+                orderable: false,
+                className: 'px-6 py-4'
+            },
+            { 
+                data: {% if admin.role.value == 'super_admin' %}6{% else %}5{% endif %}, 
+                orderable: true,
+                className: 'px-6 py-4 text-right'
+            },
+            { 
                 data: {% if admin.role.value == 'super_admin' %}7{% else %}6{% endif %}, 
+                orderable: true,
+                className: 'px-6 py-4'
+            },
+            { 
+                data: {% if admin.role.value == 'super_admin' %}8{% else %}7{% endif %}, 
                 orderable: false,
                 searchable: false,
                 className: 'px-6 py-4'
@@ -231,7 +478,7 @@ $(document).ready(function() {
                 ]
             }
         ],
-        order: [[{% if admin.role.value == 'super_admin' %}6{% else %}5{% endif %}, 'desc']],
+        order: [[{% if admin.role.value == 'super_admin' %}7{% else %}6{% endif %}, 'desc']],
         language: {
             search: '',
             searchPlaceholder: 'Search orders...',
@@ -347,7 +594,7 @@ $(document).ready(function() {
     $('.status-filter-btn').on('click', function(e) {
         e.preventDefault();
         const status = $(this).data('status');
-        const statusColumnIndex = {% if admin.role.value == 'super_admin' %}3{% else %}2{% endif %};
+        const statusColumnIndex = {% if admin.role.value == 'super_admin' %}4{% else %}3{% endif %};
         
         // Update active tab with smooth transition
         $('.status-filter-btn').removeClass('border-indigo-500 text-indigo-600')
@@ -409,5 +656,98 @@ $(document).ready(function() {
     bindOrderActions();
     updateStatusCounts();
 });
+
+/**
+ * Alpine.js Orders App
+ */
+// Connect Alpine.js ordersApp component to DataTables  
+document.addEventListener('alpine:init', () => {
+    // Store DataTables reference for Alpine.js component access
+    if (window.ordersTable) {
+        const ordersAppElement = document.querySelector('[x-data="ordersApp"]');
+        if (ordersAppElement && window.Alpine) {
+            const ordersAppData = Alpine.$data(ordersAppElement);
+            if (ordersAppData) {
+                ordersAppData.ordersTable = window.ordersTable;
+            }
+        }
+    }
+});
+
+// Global function to refresh orders table - updated for Alpine.js integration
+function refreshOrdersTable() {
+    if (window.ordersTable) {
+        window.ordersTable.ajax.reload(null, false);
+    }
+    // Also call Alpine.js component method if available
+    const ordersAppElement = document.querySelector('[x-data="ordersApp"]');
+    if (ordersAppElement && window.Alpine) {
+        const ordersAppData = Alpine.$data(ordersAppElement);
+        if (ordersAppData && ordersAppData.updateStatusCounts) {
+            ordersAppData.updateStatusCounts();
+        }
+    }
+}
+    
+    // Update status counts after DataTables initialization  
+    updateStatusCounts();
+
+// Status count update function - compatible with Alpine.js
+function updateStatusCounts() {
+    fetch('/api/datatables/orders/status-counts')
+        .then(response => response.json())
+        .then(data => {
+            // Update status count badges if they exist
+            const badges = {
+                'pending': document.querySelector('[data-status="pending"] .badge'),
+                'processing': document.querySelector('[data-status="processing"] .badge'),
+                'completed': document.querySelector('[data-status="completed"] .badge'),
+                'cancelled': document.querySelector('[data-status="cancelled"] .badge'),
+                'refunded': document.querySelector('[data-status="refunded"] .badge')
+            };
+            
+            Object.keys(badges).forEach(status => {
+                if (badges[status] && data[status] !== undefined) {
+                    badges[status].textContent = data[status];
+                }
+            });
+        })
+        .catch(error => console.error('Error updating status counts:', error));
+}
+
+/**
+ * Enhanced orders table management with Alpine.js integration
+ */
+function initializeEnhancedOrdersTable() {
+    // Auto-refresh every 30 seconds
+    setInterval(() => {
+        if (document.visibilityState === 'visible') {
+            updateStatusCounts();
+        }
+    }, 30000);
+    
+    // Add keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Ctrl/Cmd + R to refresh
+        if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+            e.preventDefault();
+            refreshOrdersTable();
+            if (window.ToastManager) {
+                ToastManager.success('Orders table refreshed');
+            }
+        }
+    });
+}
+
+// Initialize enhanced features when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Wait for Alpine.js to initialize first
+    setTimeout(() => {
+        initializeEnhancedOrdersTable();
+        updateStatusCounts(); // Initial load of status counts
+    }, 1000);
+});
 </script>
 {% endblock %}
+
+</div> <!-- End Alpine.js ordersApp -->

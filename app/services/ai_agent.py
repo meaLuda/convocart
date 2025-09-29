@@ -48,6 +48,10 @@ class Intent(str, Enum):
     CONTACT_SUPPORT = "contact_support"
     MPESA_PAYMENT = "mpesa_payment"
     CASH_PAYMENT = "cash_payment"
+    PAYMENT_INQUIRY = "payment_inquiry"
+    PAYMENT_CONFIRMATION = "payment_confirmation"
+    PAYMENT_SELECTION = "payment_selection"
+    PRODUCT_INQUIRY = "product_inquiry"
     GENERAL_INQUIRY = "general_inquiry"
     UNKNOWN = "unknown"
 
@@ -98,6 +102,7 @@ class OrderBotAgent:
         workflow.add_node("process_order", self._process_order_node)
         workflow.add_node("track_order", self._track_order_node)
         workflow.add_node("handle_payment", self._handle_payment_node)
+        workflow.add_node("handle_product_inquiry", self._handle_product_inquiry_node)
         workflow.add_node("general_response", self._general_response_node)
         workflow.add_node("error_handler", self._error_handler_node)
         
@@ -113,6 +118,10 @@ class OrderBotAgent:
                 Intent.CANCEL_ORDER: "track_order",
                 Intent.MPESA_PAYMENT: "handle_payment",
                 Intent.CASH_PAYMENT: "handle_payment",
+                Intent.PAYMENT_INQUIRY: "handle_payment",
+                Intent.PAYMENT_CONFIRMATION: "handle_payment",
+                Intent.PAYMENT_SELECTION: "handle_payment",
+                Intent.PRODUCT_INQUIRY: "handle_product_inquiry",
                 Intent.CONTACT_SUPPORT: "general_response",
                 Intent.GENERAL_INQUIRY: "general_response",
                 Intent.UNKNOWN: "general_response"
@@ -123,6 +132,7 @@ class OrderBotAgent:
         workflow.add_edge("process_order", END)
         workflow.add_edge("track_order", END)
         workflow.add_edge("handle_payment", END)
+        workflow.add_edge("handle_product_inquiry", END)
         workflow.add_edge("general_response", END)
         workflow.add_edge("error_handler", END)
         
@@ -361,26 +371,56 @@ class OrderBotAgent:
             state["last_action"] = "error"
             return state
     
-    def _handle_payment_node(self, state: AgentState) -> AgentState:
-        """Handle payment processing"""
+    async def _handle_payment_node(self, state: AgentState) -> AgentState:
+        """Enhanced payment handling - distinguishes questions from confirmations"""
         try:
             messages = state["messages"]
             latest_message = messages[-1] if messages else None
             intent = state["current_intent"]
             
-            if intent == Intent.MPESA_PAYMENT and latest_message:
-                # Extract M-Pesa transaction details
+            if not latest_message:
+                state["last_action"] = "error"
+                return state
+                
+            # Get business context
+            customer = self.db.query(Customer).filter(Customer.id == state["customer_id"]).first()
+            group = self.db.query(Group).filter(Group.id == state["group_id"]).first()
+            
+            if intent == Intent.PAYMENT_INQUIRY:
+                # Handle payment questions (e.g., "Can I pay with M-Pesa?")
+                response = await self._generate_payment_inquiry_response(latest_message.content, group)
+                state["order_data"] = {
+                    "ai_response": response,
+                    "response_type": "payment_inquiry"
+                }
+                state["last_action"] = "payment_inquiry_handled"
+                
+            elif intent == Intent.PAYMENT_CONFIRMATION:
+                # Handle M-Pesa confirmations
                 transaction_details = self._extract_mpesa_details(latest_message.content)
                 state["order_data"] = {
                     "payment_method": "mpesa",
                     "transaction_details": transaction_details
                 }
+                state["last_action"] = "payment_processed"
+                
+            elif intent == Intent.PAYMENT_SELECTION:
+                # Handle numbered selections (1, 2, 3)
+                selection = latest_message.content.strip()
+                if selection == "1":
+                    state["order_data"] = {"payment_method": "mpesa_selected"}
+                elif selection == "2":
+                    state["order_data"] = {"payment_method": "cash_on_delivery"}
+                elif selection == "3":
+                    state["order_data"] = {"payment_method": "cancel_order"}
+                state["last_action"] = "payment_selection_processed"
+                
             elif intent == Intent.CASH_PAYMENT:
                 state["order_data"] = {
                     "payment_method": "cash_on_delivery"
                 }
+                state["last_action"] = "payment_processed"
             
-            state["last_action"] = "payment_processed"
             return state
             
         except Exception as e:
@@ -416,6 +456,42 @@ class OrderBotAgent:
             state["last_action"] = "error"
             return state
     
+    async def _handle_product_inquiry_node(self, state: AgentState) -> AgentState:
+        """Handle product availability and information questions - Generic for all SMEs"""
+        try:
+            messages = state["messages"]
+            latest_message = messages[-1] if messages else None
+            
+            if not latest_message:
+                state["last_action"] = "error"
+                return state
+            
+            # Get business context
+            customer = self.db.query(Customer).filter(Customer.id == state["customer_id"]).first()
+            group = self.db.query(Group).filter(Group.id == state["group_id"]).first()
+            
+            # Generate product inquiry response using enhanced prompt
+            response = await self._generate_product_inquiry_response(
+                latest_message.content, customer, group, state
+            )
+            
+            state["order_data"] = {
+                "ai_response": response,
+                "response_type": "product_inquiry"
+            }
+            state["last_action"] = "product_inquiry_handled"
+            
+            return state
+            
+        except Exception as e:
+            logger.error(f"Error handling product inquiry: {str(e)}")
+            state["last_action"] = "error"
+            state["order_data"] = {
+                "ai_response": "I'm sorry, I'm having trouble with your product question right now. Please contact our support for assistance.",
+                "response_type": "error"
+            }
+            return state
+    
     def _error_handler_node(self, state: AgentState) -> AgentState:
         """Handle errors gracefully"""
         state["last_action"] = "error_handled"
@@ -433,68 +509,121 @@ class OrderBotAgent:
             return Intent.PLACE_ORDER
         elif intent in [Intent.TRACK_ORDER, Intent.CANCEL_ORDER]:
             return Intent.TRACK_ORDER
-        elif intent in [Intent.MPESA_PAYMENT, Intent.CASH_PAYMENT]:
+        elif intent in [Intent.MPESA_PAYMENT, Intent.CASH_PAYMENT, Intent.PAYMENT_INQUIRY, 
+                       Intent.PAYMENT_CONFIRMATION, Intent.PAYMENT_SELECTION]:
             return Intent.MPESA_PAYMENT
+        elif intent in [Intent.PRODUCT_INQUIRY]:
+            return Intent.PRODUCT_INQUIRY
         else:
             return Intent.GENERAL_INQUIRY
     
     def _build_intent_detection_prompt(self, customer: Customer, group: Group, state: AgentState) -> str:
-        """Build context-aware prompt for intent detection"""
+        """Build enhanced intent detection prompt using 2024 best practices - Generic for all SMEs"""
         try:
-            group_name = group.name if group and group.name else "Our Business"
-            customer_name = customer.name if customer and customer.name else "Customer"
-            
-            # Ensure we have valid data for prompt construction
+            group_name = group.name if group and group.name else "Business"
+            business_type = self._get_business_type_str(group.business_type) if group and group.business_type else "retail"
             conversation_state = state.get('conversation_state', 'initial') if state else 'initial'
             
-            # Add context-specific guidance for AWAITING_PAYMENT state
+            # STEP 1: Role + Context (Structured Context)
+            role_context = f"""You are an expert conversational AI for {group_name}, a WhatsApp commerce assistant for SMEs in Africa.
+
+CUSTOMER CONTEXT:
+- Current conversation state: {conversation_state}
+- Business type: {business_type}
+
+TASK: Analyze the customer's message using step-by-step reasoning to determine their intent."""
+
+            # STEP 2: Chain-of-Thought Reasoning Framework
+            reasoning_framework = """
+ANALYSIS FRAMEWORK - Follow these steps:
+
+Step 1: MESSAGE TYPE ANALYSIS
+- Is this a QUESTION (asking for information)?
+- Is this an ACTION (wanting to do something)?
+- Is this a CONFIRMATION (providing information)?
+
+Step 2: CONTEXT ANALYSIS
+- What is the conversation state?
+- Is this a response to payment options?
+- Is this about products/services?
+
+Step 3: INTENT CLASSIFICATION
+Based on steps 1-2, classify the intent."""
+
+            # STEP 3: Few-Shot Examples (Generic for any business)
+            few_shot_examples = """
+EXAMPLES (African SME Context):
+
+PRODUCT_INQUIRY Examples:
+- "Do you have [product]?" → QUESTION about availability
+- "What types of [product] do you sell?" → QUESTION about variety
+- "Is [product] in stock?" → QUESTION about availability
+
+PAYMENT_INQUIRY Examples:
+- "Can I pay with M-Pesa?" → QUESTION about payment methods
+- "How do I pay?" → QUESTION about payment process
+- "What payment options do you accept?" → QUESTION about payment
+
+PAYMENT_CONFIRMATION Examples:
+- "QH47XYZ123" → M-Pesa transaction code
+- "Confirmed. KSH 500.00 sent to..." → M-Pesa confirmation
+- "I have paid via M-Pesa ref: ABC123" → Payment confirmation
+
+PAYMENT_SELECTION Examples (when awaiting_payment):
+- "1" → Option 1 selection
+- "2" → Option 2 selection
+- "3" → Option 3 selection
+
+ORDER_REQUEST Examples:
+- "2 [items], 1 [item] size X" → ORDER with specific items
+- "I want to order [product]" → ORDER request
+- "order from group:[business]" → GROUP joining + ORDER"""
+
+            # STEP 4: Intent Categories
+            intent_definitions = """
+INTENT CATEGORIES:
+
+1. product_inquiry: Questions about products/services, availability, features
+2. place_order: Request to place new order with specific items
+3. track_order: Request to check order status or delivery
+4. cancel_order: Request to cancel existing order
+5. payment_inquiry: Questions about payment methods or process
+6. payment_confirmation: Providing M-Pesa codes or payment confirmations
+7. payment_selection: Selecting numbered payment options (1,2,3)
+8. contact_support: Request for human help or support
+9. general_inquiry: General business questions
+10. unknown: Unclear or ambiguous intent"""
+
+            # STEP 5: Payment Context (if applicable)
             payment_context = ""
             if conversation_state == "awaiting_payment":
                 payment_context = """
-            IMPORTANT: The customer was just presented with these payment options:
-            1. Paid with M-Pesa
-            2. Pay on Delivery  
-            3. Cancel Order
-            
-            If the customer responds with a number, interpret it as follows:
-            - "1" = mpesa_payment (they chose option 1: Paid with M-Pesa)
-            - "2" = cash_payment (they chose option 2: Pay on Delivery)
-            - "3" = cancel_order (they chose option 3: Cancel Order)
-            """
-            
-            prompt = f"""You are an AI assistant for {group_name}, helping customers via WhatsApp.
-            Customer: {customer_name}
-            Current conversation state: {conversation_state}
-            {payment_context}
-            Your task is to detect the customer's intent from their message. Respond with ONLY one of these intents:
-            - place_order: Customer wants to place a new order
-            - track_order: Customer wants to check order status
-            - cancel_order: Customer wants to cancel an order
-            - mpesa_payment: Customer is providing M-Pesa payment details/confirmation
-            - cash_payment: Customer chooses cash on delivery
-            - contact_support: Customer needs help or support
-            - general_inquiry: General questions about products/services
-            - unknown: Intent unclear
-            Consider the conversation context and respond with just the intent name."""
+PAYMENT CONTEXT: Customer was presented with payment options:
+1. Paid with M-Pesa / 2. Pay on Delivery / 3. Cancel Order
+Numbers 1,2,3 = payment_selection intent"""
 
-            # Validate prompt is not empty
-            if not prompt or len(prompt.strip()) < 10:
-                logger.error("Generated intent detection prompt is too short or empty")
-                prompt = """You are a helpful AI assistant. Analyze the customer's message and respond with one of these intents: place_order, track_order, cancel_order, mpesa_payment, cash_payment, contact_support, general_inquiry, or unknown."""
-            
-            return prompt.strip()
+            # STEP 6: Output Format
+            output_format = """
+OUTPUT: Respond with ONLY the intent name from the list above."""
+
+            return f"{role_context}\n\n{reasoning_framework}\n\n{few_shot_examples}\n\n{intent_definitions}\n\n{payment_context}\n\n{output_format}".strip()
+
         except Exception as e:
             logger.error(f"Error building intent detection prompt: {e}")
-            return """You are a helpful AI assistant. Analyze the customer's message and respond with one of these intents: place_order, track_order, cancel_order, mpesa_payment, cash_payment, contact_support, general_inquiry, or unknown."""
+            return """Analyze the customer's message and respond with one of these intents: product_inquiry, place_order, track_order, cancel_order, payment_inquiry, payment_confirmation, payment_selection, contact_support, general_inquiry, or unknown."""
     
     def _parse_intent_from_response(self, response: str) -> str:
         """Parse intent from Gemini response"""
         response_lower = response.lower().strip()
         
         intent_mapping = {
+            "product_inquiry": Intent.PRODUCT_INQUIRY,
             "place_order": Intent.PLACE_ORDER,
             "track_order": Intent.TRACK_ORDER,
             "cancel_order": Intent.CANCEL_ORDER,
+            "payment_inquiry": Intent.PAYMENT_INQUIRY,
+            "payment_confirmation": Intent.PAYMENT_CONFIRMATION,
+            "payment_selection": Intent.PAYMENT_SELECTION,
             "mpesa_payment": Intent.MPESA_PAYMENT,
             "cash_payment": Intent.CASH_PAYMENT,
             "contact_support": Intent.CONTACT_SUPPORT,
@@ -648,6 +777,187 @@ class OrderBotAgent:
         except Exception as e:
             logger.error(f"Error generating contextual response: {str(e)}")
             return "I apologize, but I'm having trouble processing your request right now. Please contact our support team for assistance."
+    
+    async def _generate_product_inquiry_response(self, message: str, customer: Customer, group: Group, state: AgentState) -> str:
+        """Generate AI-powered product inquiry response with real inventory data and business context"""
+        try:
+            group_name = group.name if group else "Our Business"
+            business_type = self._get_business_type_str(group.business_type) if group and group.business_type else "retail"
+            
+            # Get business-specific AI personality for context-aware responses
+            ai_personality = group.ai_personality if group.ai_personality else self._get_default_personality(group.business_type)
+            
+            # Initialize enhanced inventory service
+            from app.services.enhanced_inventory_service import get_enhanced_inventory_service
+            inventory_service = get_enhanced_inventory_service(self.db)
+            
+            # Extract product keywords from customer message
+            product_keywords = self._extract_product_keywords_from_message(message)
+            
+            # Search for matching products in inventory
+            matching_products = inventory_service.search_products_for_ai(
+                group_id=group.id, 
+                search_query=product_keywords, 
+                limit=5
+            )
+            
+            # Get business inventory summary for context
+            inventory_summary = inventory_service.get_business_inventory_summary_for_ai(group.id)
+            
+            # Enhanced prompt with real inventory data AND business personality
+            inventory_context = ""
+            if matching_products:
+                inventory_context = "CURRENT INVENTORY MATCHES:\n"
+                for product in matching_products[:3]:  # Top 3 matches
+                    status = "✅ In Stock" if product["in_stock"] else "❌ Out of Stock"
+                    inventory_context += f"- {product['name']}: {status} ({product['stock_quantity']} available) - KSH {product['price']}\n"
+            else:
+                inventory_context = "No exact matches found in current inventory.\n"
+            
+            # Get business-specific response patterns
+            business_context = self._get_business_specific_context_for_inquiry(business_type, group_name)
+            
+            prompt = f"""{ai_personality}
+
+CUSTOMER QUESTION: "{message}"
+EXTRACTED KEYWORDS: "{product_keywords}"
+
+{inventory_context}
+
+BUSINESS CONTEXT:
+- Total products in inventory: {inventory_summary.get('total_products', 'N/A')}
+- Business specialization: {business_context['specialization']}
+- What we DON'T sell: {business_context['out_of_scope']}
+
+CONTEXT-AWARE RESPONSE GUIDELINES:
+1. If products found IN STOCK: Mention specific items and prices
+2. If products found but OUT OF STOCK: Suggest alternatives within our business scope
+3. If NO matches AND request is WITHIN our business: Offer to check suppliers or suggest similar items
+4. If NO matches AND request is OUTSIDE our business: Politely redirect to our specialization
+5. Always maintain your business personality and expertise
+6. Keep under 80 words for WhatsApp
+
+BUSINESS-SPECIFIC RESPONSE EXAMPLES:
+{business_context['response_examples']}
+
+Generate your contextually appropriate response:"""
+            
+            response = await self._rate_limited_llm_call([HumanMessage(content=prompt)], estimated_tokens=len(prompt))
+            return response.content
+            
+        except Exception as e:
+            logger.error(f"Error generating smart product inquiry response: {str(e)}")
+            # Fallback to basic response
+            return f"Thank you for asking about our products! Let me check what we have available for you. I'll get back to you with current stock and pricing information shortly."
+    
+    def _get_business_specific_context_for_inquiry(self, business_type: str, group_name: str) -> Dict[str, str]:
+        """Get business-specific context for intelligent product inquiries"""
+        business_contexts = {
+            'electronics': {
+                'specialization': 'Electronics, smartphones, computers, gadgets, and tech accessories',
+                'out_of_scope': 'Food, clothing, medicines, furniture, or non-tech items',
+                'response_examples': '''
+                OUT OF SCOPE: "I'm a tech specialist - I help with electronics, phones, computers, and gadgets. Were you looking for any tech products instead?"
+                SIMILAR TECH: "I don't have that exact model, but I have similar smartphones/laptops. Would you like to see what's available?"
+                SUPPLIER CHECK: "Let me check with our tech suppliers for that specific model. In the meantime, we have similar electronics available."'''
+                            },
+            'restaurant': {
+                'specialization': 'Food, beverages, meals, and dining experiences',  
+                'out_of_scope': 'Electronics, clothing, medicines, or non-food items',
+                'response_examples': '''
+                OUT OF SCOPE: "I'm your food specialist - I help with meals, drinks, and dining. What can I prepare for you today?"
+                FOOD ALTERNATIVE: "We don't have that dish, but I can suggest similar items from our menu. What flavors do you enjoy?"
+                SUPPLIER CHECK: "Let me check if we can source those ingredients. Meanwhile, here's what we're serving today..."'''
+                            },
+            'pharmacy': {
+                'specialization': 'Medicines, health products, medical supplies, and wellness items',
+                'out_of_scope': 'Electronics, food, clothing, or non-medical items',
+                'response_examples': '''
+                OUT OF SCOPE: "I'm a pharmacy assistant specializing in health products and medicines. How can I help with your health needs?"
+                HEALTH ALTERNATIVE: "We don't stock that brand, but I have similar medications. Please consult our pharmacist for alternatives."
+                SUPPLIER CHECK: "Let me check our medical suppliers for that item. Do you have a prescription for this medication?"'''
+                            },
+            'fashion': {
+                'specialization': 'Clothing, shoes, accessories, and fashion items',
+                'out_of_scope': 'Electronics, food, medicines, or non-fashion items', 
+                'response_examples': '''
+                OUT OF SCOPE: "I'm your fashion consultant - I help with clothing, shoes, and style. What fashion items can I help you find?"
+                STYLE ALTERNATIVE: "We don't have that exact piece, but I have similar styles in your size. What occasion is this for?"
+                SUPPLIER CHECK: "Let me check with our fashion suppliers for that brand. What's your size and preferred color?"'''
+                            },
+            'grocery': {
+                'specialization': 'Food items, beverages, household essentials, and daily necessities',
+                'out_of_scope': 'Electronics, specialized medicines, or non-grocery items',
+                'response_examples': '''
+                OUT OF SCOPE: "I'm your grocery assistant - I help with food, drinks, and household items. What groceries do you need?"
+                GROCERY ALTERNATIVE: "We don't carry that brand, but I have similar products. Are you looking for organic or regular?"
+                SUPPLIER CHECK: "Let me check our grocery suppliers for that item. We do have similar products available now."'''
+                            }
+        }
+        
+        # Default context for unknown business types
+        default_context = {
+            'specialization': f'{business_type.title()} products and services',
+            'out_of_scope': 'Items outside our business focus',
+            'response_examples': '''
+            OUT OF SCOPE: "I specialize in our business products and services. How can I help you with items we actually carry?"
+            ALTERNATIVE: "We don't have that exact item, but I can suggest similar products we do have available."
+            SUPPLIER CHECK: "Let me check with our suppliers for that item. Here's what we currently have available."'''
+                    }
+        
+        return business_contexts.get(business_type.lower(), default_context)
+    
+    def _extract_product_keywords_from_message(self, message: str) -> str:
+        """Extract product-related keywords from customer message"""
+        # Simple keyword extraction - can be enhanced with NLP
+        message_lower = message.lower()
+        
+        # Remove common question words
+        stop_words = ['do', 'you', 'have', 'any', 'what', 'kind', 'of', 'is', 'there', 'are', 'can', 'i', 'get']
+        words = message_lower.split()
+        
+        # Filter out stop words and keep potential product names
+        keywords = [word for word in words if word not in stop_words and len(word) > 2]
+        
+        return ' '.join(keywords[:3])  # Take first 3 meaningful words
+    
+    async def _generate_payment_inquiry_response(self, message: str, group: Group) -> str:
+        """Generate response to payment questions - Generic for African SMEs"""
+        try:
+            group_name = group.name if group else "Our Business"
+            
+            prompt = f"""You are a helpful payment assistant for {group_name}, an African SME.
+
+                CUSTOMER PAYMENT QUESTION: "{message}"
+
+                TASK: Answer their payment question professionally.
+
+                GUIDELINES:
+                1. For "Can I pay with M-Pesa?" → Confirm M-Pesa is accepted
+                2. For "How do I pay?" → Explain available payment methods
+                3. For "What payment options?" → List M-Pesa, Cash on Delivery, etc.
+                4. Always be reassuring about payment security
+                5. Keep under 50 words for WhatsApp
+                6. Use African context
+
+                RESPONSE EXAMPLES:
+                Q: "Can I pay with M-Pesa?"
+                A: "Yes! We accept M-Pesa payments. When you're ready to pay, I'll provide our payment details. We also offer cash on delivery if you prefer."
+
+                Q: "How did you confirm my payment?"
+                A: "I haven't confirmed any payment yet. When you're ready to pay, please share your M-Pesa confirmation message and I'll process it for you."
+
+                Q: "What payment options do you have?"
+                A: "We accept M-Pesa (most popular) and cash on delivery. Both are secure and convenient for our customers."
+
+                Generate your response:"""
+            
+            response = await self._rate_limited_llm_call([HumanMessage(content=prompt)], estimated_tokens=len(prompt))
+            return response.content
+            
+        except Exception as e:
+            logger.error(f"Error generating payment inquiry response: {str(e)}")
+            return "Yes, we accept M-Pesa and cash on delivery. When you're ready to pay, I'll guide you through the process!"
     
     async def _extract_order_details_enhanced(self, message: str, state: AgentState, business_type: BusinessType) -> Optional[Dict[str, Any]]:
         """Enhanced order extraction with business-specific understanding"""

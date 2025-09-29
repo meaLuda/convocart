@@ -226,6 +226,18 @@ app.include_router(health_router, tags=["health"])
 # Import shared templates configuration
 from app.templates_config import templates
 
+# Helper function to safely get admin context
+async def get_admin_context_safe(request: Request):
+    """Safely get admin context without raising exceptions"""
+    try:
+        from app.routers.admin.auth import get_current_admin
+        from app.database import get_db
+        db = next(get_db())
+        admin = await get_current_admin(request, db)
+        return admin
+    except:
+        return None  # Return None if authentication fails
+
 # Error handlers
 @app.exception_handler(404)
 @app.exception_handler(StarletteHTTPException)
@@ -236,11 +248,15 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     
     logger.error(f"HTTP Exception {exc.status_code}: {exc.detail} | Error ID: {error_id} | URL: {request.url}")
     
+    # Get admin context safely
+    admin = await get_admin_context_safe(request)
+    
     # Determine appropriate template and context
     if exc.status_code == 404:
         template = "error/404.html"
         context = {
             "request": request,
+            "admin": admin,
             "error_code": 404,
             "error_id": error_id,
             "error_time": error_time
@@ -249,6 +265,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         template = "error/403.html"
         context = {
             "request": request,
+            "admin": admin,
             "error_code": 403,
             "error_id": error_id,
             "error_time": error_time
@@ -257,6 +274,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         template = "error/500.html"
         context = {
             "request": request,
+            "admin": admin,
             "error_code": 500,
             "error_details": str(exc.detail) if exc.detail else None,
             "error_id": error_id,
@@ -267,6 +285,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         template = "error/generic.html"
         context = {
             "request": request,
+            "admin": admin,
             "error_code": exc.status_code,
             "error_title": "Error",
             "error_message": str(exc.detail) if exc.detail else "An unexpected error occurred",
@@ -286,8 +305,12 @@ async def internal_server_error_handler(request: Request, exc: Exception):
     
     logger.error(f"Internal Server Error: {str(exc)} | Error ID: {error_id} | URL: {request.url}", exc_info=True)
     
+    # Get admin context safely
+    admin = await get_admin_context_safe(request)
+    
     context = {
         "request": request,
+        "admin": admin,
         "error_code": 500,
         "error_details": str(exc) if settings.debug else "Internal server error occurred",
         "error_id": error_id,
@@ -312,9 +335,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "error_id": error_id
         }
     
+    # Get admin context safely
+    admin = await get_admin_context_safe(request)
+    
     # For web requests, return HTML error page
     context = {
         "request": request,
+        "admin": admin,
         "error_code": 422,
         "error_title": "Validation Error",
         "error_message": "The submitted data contains errors. Please check your input and try again.",

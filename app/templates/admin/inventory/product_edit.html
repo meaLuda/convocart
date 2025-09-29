@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+    <!-- Header -->
+    <div class="mb-8">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900">Edit Product</h1>
+                <p class="mt-2 text-sm text-gray-600">Update product information and pricing</p>
+            </div>
+            <div class="flex space-x-3">
+                <a href="/admin/inventory/products" 
+                   class="btn-modal btn-modal-outline">
+                    <i class="fas fa-arrow-left mr-2"></i>
+                    Back to Products
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Form -->
+    <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+        <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Product Details</h2>
+            <p class="text-sm text-gray-600 mt-1">Update the product information below</p>
+        </div>
+        
+        <form id="product-edit-form" method="POST" action="/admin/inventory/product/{{ product.id }}/edit" class="p-6 space-y-6">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            
+            <!-- Product Name -->
+            <div class="form-group">
+                <label for="name" class="form-label">
+                    Product Name <span class="text-red-500">*</span>
+                </label>
+                <input type="text" 
+                       id="name" 
+                       name="name" 
+                       value="{{ product.name }}"
+                       class="form-input" 
+                       required 
+                       placeholder="Enter product name">
+                <p class="text-xs text-gray-500 mt-1">The display name for this product</p>
+            </div>
+
+            <!-- Description -->
+            <div class="form-group">
+                <label for="description" class="form-label">Description</label>
+                <textarea id="description" 
+                          name="description" 
+                          rows="3"
+                          class="form-textarea" 
+                          placeholder="Enter product description">{{ product.description or '' }}</textarea>
+                <p class="text-xs text-gray-500 mt-1">Optional detailed description of the product</p>
+            </div>
+
+            <!-- Pricing Section -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Base Price -->
+                <div class="form-group">
+                    <label for="base_price" class="form-label">
+                        Base Price (KSh) <span class="text-red-500">*</span>
+                    </label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <span class="text-gray-500 sm:text-sm">KSh</span>
+                        </div>
+                        <input type="number" 
+                               id="base_price" 
+                               name="base_price" 
+                               value="{{ product.base_price }}"
+                               step="0.01" 
+                               min="0"
+                               class="form-input pl-12" 
+                               required 
+                               placeholder="0.00">
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">The standard selling price</p>
+                </div>
+
+                <!-- Cost Price -->
+                <div class="form-group">
+                    <label for="cost_price" class="form-label">Cost Price (KSh)</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <span class="text-gray-500 sm:text-sm">KSh</span>
+                        </div>
+                        <input type="number" 
+                               id="cost_price" 
+                               name="cost_price" 
+                               value="{{ product.cost_price or '' }}"
+                               step="0.01" 
+                               min="0"
+                               class="form-input pl-12" 
+                               placeholder="0.00">
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Your cost to purchase this product</p>
+                </div>
+            </div>
+
+            <!-- Inventory Settings -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Low Stock Threshold -->
+                <div class="form-group">
+                    <label for="low_stock_threshold" class="form-label">Low Stock Threshold</label>
+                    <input type="number" 
+                           id="low_stock_threshold" 
+                           name="low_stock_threshold" 
+                           value="{{ product.low_stock_threshold or 5 }}"
+                           min="0"
+                           class="form-input" 
+                           placeholder="5">
+                    <p class="text-xs text-gray-500 mt-1">Alert when stock falls below this number</p>
+                </div>
+
+                <!-- Category -->
+                <div class="form-group">
+                    <label for="category" class="form-label">Category</label>
+                    <select id="category" name="category" class="form-select">
+                        <option value="">Select a category</option>
+                        {% for cat in available_categories %}
+                        <option value="{{ cat }}" 
+                                {% if product.category and product.category.value == cat %}selected{% endif %}>
+                            {{ cat.replace('_', ' ').title() }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Product category for organization</p>
+                </div>
+            </div>
+
+            <!-- Current Product Information -->
+            <div class="bg-blue-50 p-4 rounded-lg">
+                <h3 class="text-sm font-medium text-blue-900 mb-2">Current Product Information</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                        <span class="text-blue-700 font-medium">SKU:</span>
+                        <div class="text-blue-900">{{ product.sku or 'N/A' }}</div>
+                    </div>
+                    <div>
+                        <span class="text-blue-700 font-medium">Group:</span>
+                        <div class="text-blue-900">{{ product.group.name if product.group else 'N/A' }}</div>
+                    </div>
+                    <div>
+                        <span class="text-blue-700 font-medium">Created:</span>
+                        <div class="text-blue-900">{{ product.created_at.strftime('%m/%d/%Y') }}</div>
+                    </div>
+                    <div>
+                        <span class="text-blue-700 font-medium">Updated:</span>
+                        <div class="text-blue-900">{{ product.updated_at.strftime('%m/%d/%Y') }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="flex items-center justify-between pt-6 border-t border-gray-200">
+                <div class="flex items-center space-x-4">
+                    <!-- Stock Management Button -->
+                    <button type="button" 
+                            onclick="openStockModal({{ product.id }})"
+                            class="btn-modal btn-modal-secondary">
+                        <i class="fas fa-boxes mr-2"></i>
+                        Manage Stock
+                    </button>
+                    
+                    <!-- View History Button -->
+                    <button type="button" 
+                            onclick="viewStockHistory({{ product.id }})"
+                            class="btn-modal btn-modal-outline">
+                        <i class="fas fa-history mr-2"></i>
+                        Stock History
+                    </button>
+                </div>
+                
+                <div class="flex items-center space-x-3">
+                    <a href="/admin/inventory/products" 
+                       class="btn-modal btn-modal-outline">
+                        Cancel
+                    </a>
+                    
+                    <button type="submit" 
+                            class="btn-modal btn-modal-primary"
+                            id="save-button">
+                        <i class="fas fa-save mr-2"></i>
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Stock Management Modal (will be populated by JavaScript) -->
+<div id="stock-modal-container"></div>
+
+<!-- Enhanced Modal and Table Components -->
+{% include 'components/enhanced_modals.html' %}
+{% include 'components/enhanced_tables.html' %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('product-edit-form');
+    const saveButton = document.getElementById('save-button');
+    
+    // Form submission handler
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Show loading state
+        saveButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving...';
+        saveButton.disabled = true;
+        
+        // Create form data
+        const formData = new FormData(form);
+        
+        // Submit via fetch
+        fetch(form.action, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Show success message
+                TableActions.showToast('success', 'Product updated successfully');
+                
+                // Reset button
+                saveButton.innerHTML = '<i class="fas fa-save mr-2"></i>Save Changes';
+                saveButton.disabled = false;
+                
+                // Optionally redirect after a delay
+                setTimeout(() => {
+                    window.location.href = '/admin/inventory/products';
+                }, 1500);
+            } else {
+                throw new Error(data.message || 'Failed to update product');
+            }
+        })
+        .catch(error => {
+            TableActions.showToast('error', error.message || 'An error occurred');
+            
+            // Reset button
+            saveButton.innerHTML = '<i class="fas fa-save mr-2"></i>Save Changes';
+            saveButton.disabled = false;
+        });
+    });
+    
+    // Calculate profit margin when prices change
+    const basePriceInput = document.getElementById('base_price');
+    const costPriceInput = document.getElementById('cost_price');
+    
+    function updateProfitDisplay() {
+        const basePrice = parseFloat(basePriceInput.value) || 0;
+        const costPrice = parseFloat(costPriceInput.value) || 0;
+        
+        if (basePrice > 0 && costPrice > 0) {
+            const profit = basePrice - costPrice;
+            const margin = ((profit / basePrice) * 100).toFixed(1);
+            
+            // You could add a profit display element here
+            console.log(`Profit: KSh ${profit.toFixed(2)} (${margin}% margin)`);
+        }
+    }
+    
+    basePriceInput.addEventListener('input', updateProfitDisplay);
+    costPriceInput.addEventListener('input', updateProfitDisplay);
+});
+
+/**
+ * Open stock management modal
+ */
+function openStockModal(productId) {
+    const modal = ModalSystem.form({
+        title: 'Manage Stock',
+        size: 'md',
+        fields: [
+            {
+                type: 'select',
+                name: 'change_type',
+                label: 'Stock Operation',
+                required: true,
+                options: [
+                    { value: 'stock_in', text: 'Stock In (Add inventory)' },
+                    { value: 'stock_out', text: 'Stock Out (Remove inventory)' },
+                    { value: 'adjustment', text: 'Adjustment (Set exact amount)' }
+                ]
+            },
+            {
+                type: 'number',
+                name: 'quantity',
+                label: 'Quantity',
+                required: true,
+                placeholder: '0'
+            },
+            {
+                type: 'textarea',
+                name: 'reason',
+                label: 'Reason',
+                placeholder: 'Optional reason for stock change'
+            }
+        ],
+        onSubmit: function(formData) {
+            // Add product ID to form data
+            formData.append('product_id', productId);
+            
+            // Submit stock update
+            fetch('/admin/inventory/update-stock', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    TableActions.showToast('success', 'Stock updated successfully');
+                } else {
+                    TableActions.showToast('error', data.message || 'Failed to update stock');
+                }
+            })
+            .catch(error => {
+                TableActions.showToast('error', 'An error occurred while updating stock');
+            });
+        }
+    });
+    
+    modal.show();
+}
+
+/**
+ * View stock history
+ */
+function viewStockHistory(productId) {
+    TableActions.view(
+        `/admin/inventory/product/${productId}/stock-history`,
+        'Stock History'
+    );
+}
+</script>
+{% endblock %}

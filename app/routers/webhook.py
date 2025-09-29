@@ -340,6 +340,29 @@ async def handle_ai_agent_response(ai_result: Dict[str, Any], customer, session,
         # AI processed payment information
         await handle_ai_payment_processing(phone_number, customer.id, order_data, db, whatsapp_service)
         
+    elif action == "product_inquiry_handled" and order_data:
+        # AI handled product inquiry
+        response = order_data.get("ai_response", "Let me help you with your product question.")
+        whatsapp_service.send_text_message(phone_number, response)
+        
+    elif action == "payment_inquiry_handled" and order_data:
+        # AI handled payment inquiry
+        response = order_data.get("ai_response", "We accept M-Pesa and cash on delivery.")
+        whatsapp_service.send_text_message(phone_number, response)
+        
+    elif action == "payment_selection_processed" and order_data:
+        # AI processed payment selection (1, 2, 3)
+        payment_method = order_data.get("payment_method")
+        if payment_method == "mpesa_selected":
+            # User selected M-Pesa, provide payment instructions
+            await handle_payment_method_selection(phone_number, customer.id, "1", db, whatsapp_service, session)
+        elif payment_method == "cash_on_delivery":
+            # User selected cash on delivery
+            await handle_payment_method_selection(phone_number, customer.id, "2", db, whatsapp_service, session)
+        elif payment_method == "cancel_order":
+            # User selected cancel order
+            await handle_payment_method_selection(phone_number, customer.id, "3", db, whatsapp_service, session)
+        
     elif action == "ai_response_generated" and order_data:
         # AI generated a general response
         response = order_data.get("ai_response", "How can I help you today?")

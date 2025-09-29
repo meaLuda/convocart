@@ -1,0 +1,136 @@
+
+<header class="bg-gray-800 shadow-lg sticky top-0 z-40" x-data="{ mobileMenuOpen: false }">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center py-3">
+            <div class="flex items-center space-x-4">
+                <a href="/admin/dashboard" class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-gray-700 rounded-lg flex items-center justify-center">
+                        <img src="/static/img/trolley.png" alt="ConvoCart Icon" class="h-6 w-auto">
+                    </div>
+                    <div>
+                        <span class="text-white font-bold text-lg">ConvoCart</span>
+                        <div class="text-xs text-gray-400">Admin Panel</div>
+                    </div>
+                </a>
+            </div>
+
+            <!-- Mobile Menu Button -->
+            <div class="lg:hidden">
+                <button @click="mobileMenuOpen = !mobileMenuOpen" class="text-gray-400 hover:text-white focus:outline-none">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Desktop Navigation -->
+            <nav class="hidden lg:flex items-center space-x-6">
+                <!-- Navigation Groups -->
+                <div class="flex items-center space-x-6">
+                    <!-- Core Operations -->
+                    <div class="relative group">
+                        <button class="flex items-center text-gray-300 hover:text-white transition-colors duration-200">
+                            <span>Core Operations</span>
+                            <i class="fas fa-chevron-down text-xs ml-2"></i>
+                        </button>
+                        <div class="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-2 opacity-0 group-hover:opacity-100 invisible group-hover:visible transition-all duration-200 z-50">
+                            <a href="/admin/dashboard" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-600">Dashboard</a>
+                            <a href="/admin/orders" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-600">Orders</a>
+                        </div>
+                    </div>
+
+                    <!-- Business Management -->
+                    <div class="relative group">
+                        <button class="flex items-center text-gray-300 hover:text-white transition-colors duration-200">
+                            <span>Business Management</span>
+                            <i class="fas fa-chevron-down text-xs ml-2"></i>
+                        </button>
+                        <div class="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-2 opacity-0 group-hover:opacity-100 invisible group-hover:visible transition-all duration-200 z-50">
+                            <a href="/admin/groups" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-600">Groups</a>
+                            <a href="/admin/inventory/dashboard" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-600">Inventory</a>
+                        </div>
+                    </div>
+
+                    <!-- Analytics -->
+                    <div class="relative group">
+                        <button class="flex items-center text-gray-300 hover:text-white transition-colors duration-200">
+                            <span>Analytics</span>
+                            <i class="fas fa-chevron-down text-xs ml-2"></i>
+                        </button>
+                        <div class="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-2 opacity-0 group-hover:opacity-100 invisible group-hover:visible transition-all duration-200 z-50">
+                            <a href="/admin/cart-recovery/analytics" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-600">Cart Recovery</a>
+                            {% if admin.role.value == 'super_admin' %}
+                            <a href="/admin/api-usage" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-600">API Usage</a>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- System -->
+                    <div class="relative group">
+                        <button class="flex items-center text-gray-300 hover:text-white transition-colors duration-200">
+                            <span>System</span>
+                            <i class="fas fa-chevron-down text-xs ml-2"></i>
+                        </button>
+                        <div class="absolute left-0 mt-2 w-48 bg-gray-700 rounded-md shadow-lg py-2 opacity-0 group-hover:opacity-100 invisible group-hover:visible transition-all duration-200 z-50">
+                            {% if admin.role.value == 'super_admin' %}
+                            <a href="/admin/users" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-600">Users</a>
+                            {% endif %}
+                            <a href="/admin/settings" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-600">Settings</a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User Profile Dropdown -->
+                <div class="relative group">
+                    <button class="flex items-center">
+                        <div class="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-sm font-bold text-white">
+                            {{ admin.username[:1]|upper }}
+                        </div>
+                        <span class="hidden xl:inline text-gray-300 ml-2">{{ admin.username }}</span>
+                        <i class="fas fa-chevron-down text-xs text-gray-400 ml-2"></i>
+                    </button>
+                    <div class="absolute right-0 mt-2 w-56 bg-gray-700 rounded-md shadow-lg py-2 opacity-0 group-hover:opacity-100 invisible group-hover:visible transition-all duration-200 z-50">
+                        <div class="px-4 py-3 border-b border-gray-600">
+                            <div class="font-medium text-white">{{ admin.full_name or admin.username }}</div>
+                            <div class="text-sm text-gray-400">{{ admin.role.value|replace('_', ' ')|title }}</div>
+                        </div>
+                        <a href="/admin/logout" class="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-600">
+                            Logout
+                        </a>
+                    </div>
+                </div>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Mobile Navigation -->
+    <div x-show="mobileMenuOpen" @click.away="mobileMenuOpen = false" class="lg:hidden" x-transition>
+        <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+            <!-- Mobile Navigation Links -->
+            <a href="/admin/dashboard" class="block px-3 py-2 rounded-md text-base font-medium text-white bg-gray-900">Dashboard</a>
+            <a href="/admin/orders" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-700">Orders</a>
+            <a href="/admin/groups" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-700">Groups</a>
+            <a href="/admin/inventory/dashboard" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-700">Inventory</a>
+            <a href="/admin/cart-recovery/analytics" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-700">Cart Recovery</a>
+            {% if admin.role.value == 'super_admin' %}
+            <a href="/admin/api-usage" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-700">API Usage</a>
+            <a href="/admin/users" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-700">Users</a>
+            {% endif %}
+            <a href="/admin/settings" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-700">Settings</a>
+        </div>
+        <div class="pt-4 pb-3 border-t border-gray-700">
+            <div class="flex items-center px-5">
+                <div class="flex-shrink-0">
+                    <div class="w-10 h-10 bg-gray-700 rounded-full flex items-center justify-center text-sm font-bold text-white">
+                        {{ admin.username[:1]|upper }}
+                    </div>
+                </div>
+                <div class="ml-3">
+                    <div class="text-base font-medium leading-none text-white">{{ admin.full_name or admin.username }}</div>
+                    <div class="text-sm font-medium leading-none text-gray-400">{{ admin.role.value|replace('_', ' ')|title }}</div>
+                </div>
+            </div>
+            <div class="mt-3 px-2 space-y-1">
+                <a href="/admin/logout" class="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-700">Logout</a>
+            </div>
+        </div>
+    </div>
+</header>

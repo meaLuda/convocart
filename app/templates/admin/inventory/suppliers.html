@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+
+{% block title %}Suppliers Management | ConvoCart{% endblock %}
+{% block page_title %}Suppliers Management{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header with Add Supplier Button -->
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Suppliers Management</h1>
+            <p class="text-gray-600 mt-1">Manage your supplier network for reliable sourcing across Africa</p>
+        </div>
+        <div class="flex space-x-3 mt-4 lg:mt-0">
+            <button class="btn btn-outline">
+                <i class="fas fa-download mr-2"></i>Export List
+            </button>
+            <button class="btn btn-primary" onclick="openAddSupplierModal()">
+                <i class="fas fa-plus mr-2"></i>Add Supplier
+            </button>
+        </div>
+    </div>
+
+    <!-- Suppliers Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {% for supplier in suppliers %}
+        <div class="card hover:shadow-lg transition-shadow">
+            <div class="card-body">
+                <!-- Supplier Header -->
+                <div class="flex items-start justify-between mb-4">
+                    <div class="flex items-center">
+                        <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">
+                            {{ supplier.name[:1].upper() }}
+                        </div>
+                        <div class="ml-3">
+                            <h3 class="font-semibold text-gray-900">{{ supplier.name }}</h3>
+                            <p class="text-sm text-gray-600">{{ supplier.supplier_type or 'General Supplier' }}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-1">
+                        {% for i in range(5) %}
+                        <i class="fas fa-star text-{{ 'yellow-400' if i < supplier.rating else 'gray-300' }} text-sm"></i>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Contact Information -->
+                <div class="space-y-3 mb-4">
+                    {% if supplier.contact_person %}
+                    <div class="flex items-center text-sm">
+                        <i class="fas fa-user text-gray-400 w-4"></i>
+                        <span class="ml-2 text-gray-700">{{ supplier.contact_person }}</span>
+                    </div>
+                    {% endif %}
+                    {% if supplier.phone %}
+                    <div class="flex items-center text-sm">
+                        <i class="fas fa-phone text-gray-400 w-4"></i>
+                        <span class="ml-2 text-gray-700">{{ supplier.phone }}</span>
+                    </div>
+                    {% endif %}
+                    {% if supplier.location_region %}
+                    <div class="flex items-center text-sm">
+                        <i class="fas fa-map-marker-alt text-gray-400 w-4"></i>
+                        <span class="ml-2 text-gray-700">{{ supplier.location_region }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Business Details -->
+                <div class="space-y-2 mb-4">
+                    {% if supplier.minimum_order %}
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-600">Min. Order:</span>
+                        <span class="font-medium">{{ supplier.minimum_order }} {{ supplier.minimum_order_unit.value if supplier.minimum_order_unit else 'units' }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-600">Delivery:</span>
+                        <span class="font-medium">{{ supplier.delivery_days or 7 }} days</span>
+                    </div>
+                    {% if supplier.payment_terms %}
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-600">Payment:</span>
+                        <span class="font-medium text-xs">{{ supplier.payment_terms[:20] }}{{ '...' if supplier.payment_terms|length > 20 else '' }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Product Categories -->
+                {% if supplier.products_category %}
+                <div class="mb-4">
+                    <p class="text-xs text-gray-500 mb-2">SUPPLIES</p>
+                    <div class="flex flex-wrap gap-1">
+                        {% for category in supplier.products_category[:3] %}
+                        <span class="px-2 py-1 bg-primary-100 text-primary-700 text-xs rounded-full">
+                            {{ category }}
+                        </span>
+                        {% endfor %}
+                        {% if supplier.products_category|length > 3 %}
+                        <span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
+                            +{{ supplier.products_category|length - 3 }} more
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Action Buttons -->
+                <div class="flex space-x-2">
+                    <button class="flex-1 btn btn-outline btn-sm" onclick="editSupplier({{ supplier.id }})">
+                        <i class="fas fa-edit mr-1"></i>Edit
+                    </button>
+                    <button class="flex-1 btn btn-primary btn-sm" onclick="contactSupplier({{ supplier.id }})">
+                        <i class="fas fa-phone mr-1"></i>Contact
+                    </button>
+                </div>
+
+                <!-- Notes Preview -->
+                {% if supplier.notes %}
+                <div class="mt-3 pt-3 border-t border-gray-200">
+                    <p class="text-xs text-gray-600">
+                        <i class="fas fa-sticky-note mr-1"></i>
+                        {{ supplier.notes[:50] }}{{ '...' if supplier.notes|length > 50 else '' }}
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Empty State -->
+    {% if not suppliers %}
+    <div class="card">
+        <div class="card-body text-center py-12">
+            <i class="fas fa-truck text-gray-400 text-5xl mb-4"></i>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">No suppliers added yet</h3>
+            <p class="text-gray-600 mb-6">Build your supplier network to ensure reliable sourcing for your business.</p>
+            <button class="btn btn-primary" onclick="openAddSupplierModal()">
+                <i class="fas fa-plus mr-2"></i>Add Your First Supplier
+            </button>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Add Supplier Modal -->
+    <div id="addSupplierModal" class="modal">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Add New Supplier</h3>
+                    <button class="modal-close" onclick="closeModal('addSupplierModal')">&times;</button>
+                </div>
+                <form id="addSupplierForm">
+                    <div class="modal-body">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Basic Information -->
+                            <div class="md:col-span-2">
+                                <h4 class="font-medium text-gray-900 mb-3">Basic Information</h4>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Supplier Name *</label>
+                                <input type="text" name="name" class="form-input" required>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Business Group</label>
+                                <select name="group_id" class="form-input" required>
+                                    <option value="">Select Business Group</option>
+                                    {% for group in groups %}
+                                    <option value="{{ group.id }}">{{ group.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Supplier Type</label>
+                                <select name="supplier_type" class="form-input">
+                                    <option value="">Select Type</option>
+                                    <option value="manufacturer">Manufacturer</option>
+                                    <option value="distributor">Distributor</option>
+                                    <option value="wholesaler">Wholesaler</option>
+                                    <option value="farmer">Farmer</option>
+                                    <option value="cooperative">Cooperative</option>
+                                    <option value="importer">Importer</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Region/Location</label>
+                                <input type="text" name="location_region" class="form-input" placeholder="e.g., Nairobi, Lagos, Cape Town">
+                            </div>
+
+                            <!-- Contact Information -->
+                            <div class="md:col-span-2 mt-4">
+                                <h4 class="font-medium text-gray-900 mb-3">Contact Information</h4>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Contact Person</label>
+                                <input type="text" name="contact_person" class="form-input">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Phone Number</label>
+                                <input type="tel" name="phone" class="form-input" placeholder="+254700123456">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Email</label>
+                                <input type="email" name="email" class="form-input">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Address</label>
+                                <textarea name="address" class="form-input" rows="3"></textarea>
+                            </div>
+
+                            <!-- Business Terms -->
+                            <div class="md:col-span-2 mt-4">
+                                <h4 class="font-medium text-gray-900 mb-3">Business Terms</h4>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Minimum Order Quantity</label>
+                                <input type="number" name="minimum_order" class="form-input" min="1">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Delivery Days</label>
+                                <input type="number" name="delivery_days" class="form-input" min="1" value="7">
+                            </div>
+                            
+                            <div class="form-group md:col-span-2">
+                                <label class="form-label">Payment Terms</label>
+                                <input type="text" name="payment_terms" class="form-input" placeholder="e.g., 30 days credit, Cash on delivery">
+                            </div>
+                            
+                            <div class="form-group md:col-span-2">
+                                <label class="form-label">Product Categories (comma-separated)</label>
+                                <input type="text" name="products_category" class="form-input" placeholder="e.g., Electronics, Clothing, Food Items">
+                            </div>
+                            
+                            <div class="form-group md:col-span-2">
+                                <label class="form-label">Notes</label>
+                                <textarea name="notes" class="form-input" rows="3" placeholder="Additional notes about this supplier..."></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline" onclick="closeModal('addSupplierModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add Supplier</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.btn-sm {
+    @apply px-3 py-1 text-sm;
+}
+
+.modal {
+    @apply fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50;
+}
+
+.modal.show {
+    @apply flex;
+}
+
+.modal-dialog {
+    @apply bg-white rounded-lg shadow-xl max-w-md w-full mx-4;
+}
+
+.modal-lg {
+    @apply max-w-2xl;
+}
+
+.modal-content {
+    @apply w-full;
+}
+
+.modal-header {
+    @apply flex items-center justify-between p-4 border-b;
+}
+
+.modal-title {
+    @apply text-lg font-semibold;
+}
+
+.modal-close {
+    @apply text-gray-400 hover:text-gray-600 text-2xl font-bold;
+}
+
+.modal-body {
+    @apply p-4;
+}
+
+.modal-footer {
+    @apply flex justify-end space-x-2 p-4 border-t;
+}
+
+.form-group {
+    @apply mb-4;
+}
+
+.form-label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+}
+
+.form-input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500;
+}
+</style>
+
+<script>
+function openAddSupplierModal() {
+    document.getElementById('addSupplierModal').classList.add('show');
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).classList.remove('show');
+}
+
+function editSupplier(supplierId) {
+    // Navigate to edit page or open edit modal
+    window.location.href = `/admin/suppliers/${supplierId}/edit`;
+}
+
+function contactSupplier(supplierId) {
+    // Open contact options or initiate call
+    const supplier = {{ suppliers|tojson }}.find(s => s.id === supplierId);
+    if (supplier && supplier.phone) {
+        window.open(`tel:${supplier.phone}`);
+    } else {
+        alert('No phone number available for this supplier');
+    }
+}
+
+// Handle add supplier form submission
+document.getElementById('addSupplierForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    
+    // Convert products_category to array
+    const categoriesInput = formData.get('products_category');
+    if (categoriesInput) {
+        const categoriesArray = categoriesInput.split(',').map(cat => cat.trim()).filter(cat => cat);
+        formData.set('products_category', JSON.stringify(categoriesArray));
+    }
+    
+    fetch('/admin/inventory/suppliers', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Error adding supplier: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error adding supplier');
+    });
+});
+
+// Close modals when clicking outside
+window.onclick = function(event) {
+    const modals = document.querySelectorAll('.modal');
+    modals.forEach(modal => {
+        if (event.target === modal) {
+            modal.classList.remove('show');
+        }
+    });
+}
+</script>
+{% endblock %}

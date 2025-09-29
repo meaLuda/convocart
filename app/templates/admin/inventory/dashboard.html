@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory Dashboard | ConvoCart{% endblock %}
+{% block page_title %}Inventory Dashboard{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header Section with Quick Actions -->
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Inventory Management</h1>
+            <p class="text-gray-600 mt-1">Monitor stock levels, manage locations, and optimize inventory across your business</p>
+        </div>
+        <div class="flex space-x-3 mt-4 lg:mt-0">
+            <a href="/admin/inventory/products" class="btn btn-primary">
+                <i class="fas fa-plus mr-2"></i>Manage Products
+            </a>
+            <a href="/admin/inventory/business-setup" class="btn btn-outline">
+                <i class="fas fa-store mr-2"></i>Business Setup
+            </a>
+        </div>
+    </div>
+
+    <!-- Key Metrics Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Total Products -->
+        <div class="stats-card">
+            <div class="flex items-center">
+                <div class="w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-boxes text-primary-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-sm font-medium text-gray-500">Total Products</h3>
+                    <p class="text-2xl font-bold text-gray-900">{{ total_products }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Locations -->
+        <div class="stats-card">
+            <div class="flex items-center">
+                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-map-marker-alt text-green-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-sm font-medium text-gray-500">Locations</h3>
+                    <p class="text-2xl font-bold text-gray-900">{{ total_locations }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Low Stock Alerts -->
+        <div class="stats-card">
+            <div class="flex items-center">
+                <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-exclamation-triangle text-orange-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-sm font-medium text-gray-500">Low Stock Alerts</h3>
+                    <p class="text-2xl font-bold text-gray-900 {{ 'text-orange-600' if low_stock_count > 0 else '' }}">{{ low_stock_count }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Inventory Health -->
+        <div class="stats-card">
+            <div class="flex items-center">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-heartbeat text-blue-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-sm font-medium text-gray-500">Overall Health</h3>
+                    <p class="text-2xl font-bold text-gray-900">
+                        {% if groups_summary %}
+                            {% set avg_health = groups_summary|map(attribute='summary.inventory_health')|list %}
+                            {% if 'excellent' in avg_health %}Excellent
+                            {% elif 'good' in avg_health %}Good
+                            {% elif 'fair' in avg_health %}Fair
+                            {% else %}Needs Attention{% endif %}
+                        {% else %}N/A{% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Low Stock Alerts Panel -->
+        <div class="card">
+            <div class="card-header flex items-center justify-between">
+                <h3 class="card-title">
+                    <i class="fas fa-exclamation-triangle text-orange-500 mr-2"></i>
+                    Low Stock Alerts
+                </h3>
+                <a href="/admin/inventory/reorder-suggestions" class="text-primary-600 hover:text-primary-700 text-sm font-medium">
+                    View All Suggestions
+                </a>
+            </div>
+            <div class="card-body">
+                {% if low_stock_alerts %}
+                    <div class="space-y-3">
+                        {% for alert in low_stock_alerts %}
+                        <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div>
+                                <h4 class="font-medium text-gray-900">{{ alert.product.name }}</h4>
+                                <p class="text-sm text-gray-600">
+                                    Current: {{ alert.current_stock }} | Threshold: {{ alert.threshold }}
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <span class="badge {{ 'badge-danger' if alert.status == 'out_of_stock' else 'badge-warning' }}">
+                                    {{ 'Out of Stock' if alert.status == 'out_of_stock' else 'Low Stock' }}
+                                </span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-8">
+                        <i class="fas fa-check-circle text-green-500 text-4xl mb-2"></i>
+                        <p class="text-gray-600">All products are adequately stocked!</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Business Groups Health -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-chart-pie text-blue-500 mr-2"></i>
+                    Business Groups Overview
+                </h3>
+            </div>
+            <div class="card-body">
+                {% if groups_summary %}
+                    <div class="space-y-4">
+                        {% for group_data in groups_summary %}
+                        <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                            <div>
+                                <h4 class="font-medium text-gray-900">{{ group_data.group.name }}</h4>
+                                <p class="text-sm text-gray-600">
+                                    {{ group_data.summary.total_products or 0 }} products
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                {% set health = group_data.summary.inventory_health %}
+                                <span class="badge 
+                                    {{ 'badge-success' if health == 'excellent' else
+                                       'badge-info' if health == 'good' else
+                                       'badge-warning' if health == 'fair' else 'badge-danger' }}">
+                                    {{ health|title if health else 'N/A' }}
+                                </span>
+                                {% if group_data.summary.low_stock_count > 0 %}
+                                <p class="text-xs text-orange-600 mt-1">
+                                    {{ group_data.summary.low_stock_count }} low stock
+                                </p>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-8">
+                        <i class="fas fa-store text-gray-400 text-4xl mb-2"></i>
+                        <p class="text-gray-600">No business groups configured yet</p>
+                        <a href="/admin/inventory/business-setup" class="btn btn-primary mt-3">
+                            Set Up Your First Business
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity & Quick Actions -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Recent Inventory Activity -->
+        <div class="lg:col-span-2 card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-history text-gray-500 mr-2"></i>
+                    Recent Inventory Activity
+                </h3>
+            </div>
+            <div class="card-body">
+                {% if recent_activities %}
+                    <div class="space-y-3">
+                        {% for activity in recent_activities %}
+                        <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                            <div class="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
+                                <i class="fas fa-box text-primary-600 text-sm"></i>
+                            </div>
+                            <div class="flex-1">
+                                <p class="font-medium text-gray-900">{{ activity.change_type|title }}</p>
+                                <p class="text-sm text-gray-600">
+                                    Quantity: {{ activity.quantity_change }}
+                                    {% if activity.reason %} - {{ activity.reason }}{% endif %}
+                                </p>
+                            </div>
+                            <div class="text-xs text-gray-500">
+                                {{ activity.created_at.strftime('%m/%d %H:%M') }}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-8">
+                        <i class="fas fa-clock text-gray-400 text-4xl mb-2"></i>
+                        <p class="text-gray-600">No recent inventory activity</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Quick Actions Panel -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-bolt text-yellow-500 mr-2"></i>
+                    Quick Actions
+                </h3>
+            </div>
+            <div class="card-body">
+                <div class="space-y-3">
+                    <a href="/admin/inventory/products" class="flex items-center p-3 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors">
+                        <i class="fas fa-boxes text-primary-600 mr-3"></i>
+                        <span class="font-medium text-primary-700">Manage Products</span>
+                    </a>
+                    <a href="/admin/inventory/locations" class="flex items-center p-3 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
+                        <i class="fas fa-map-marker-alt text-green-600 mr-3"></i>
+                        <span class="font-medium text-green-700">Manage Locations</span>
+                    </a>
+                    <a href="/admin/inventory/suppliers" class="flex items-center p-3 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
+                        <i class="fas fa-truck text-blue-600 mr-3"></i>
+                        <span class="font-medium text-blue-700">Manage Suppliers</span>
+                    </a>
+                    <a href="/admin/inventory/reorder-suggestions" class="flex items-center p-3 bg-orange-50 hover:bg-orange-100 rounded-lg transition-colors">
+                        <i class="fas fa-lightbulb text-orange-600 mr-3"></i>
+                        <span class="font-medium text-orange-700">Reorder Suggestions</span>
+                    </a>
+                    <a href="/admin/inventory/business-setup" class="flex items-center p-3 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors">
+                        <i class="fas fa-store text-purple-600 mr-3"></i>
+                        <span class="font-medium text-purple-700">Business Setup</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Additional styles for inventory dashboard */
+.stats-card {
+    @apply bg-white rounded-xl shadow-sm p-6 border border-gray-200;
+}
+
+.badge {
+    @apply px-2 py-1 text-xs font-medium rounded-full;
+}
+
+.badge-success {
+    @apply bg-green-100 text-green-800;
+}
+
+.badge-info {
+    @apply bg-blue-100 text-blue-800;
+}
+
+.badge-warning {
+    @apply bg-orange-100 text-orange-800;
+}
+
+.badge-danger {
+    @apply bg-red-100 text-red-800;
+}
+</style>
+{% endblock %}

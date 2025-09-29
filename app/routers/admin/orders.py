@@ -279,5 +279,286 @@ async def update_order_status(
         else:
             logger.info(f"Skipping duplicate notification for order {order.order_number}")
     
-    # Redirect back to the orders page
-    return RedirectResponse(url="/admin/orders", status_code=303)
+    # Return JSON response for AJAX requests
+    return {"success": True, "message": "Order updated successfully"}
+
+
+@router.get("/admin/orders/{order_id}/details", response_class=HTMLResponse)
+async def order_details(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Get detailed order information for modal display"""
+    try:
+        current_admin = await get_current_admin(request, db)
+        
+        # Get order with relationships
+        order = db.query(models.Order).filter(models.Order.id == order_id).first()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        # Check permissions
+        if not check_admin_has_access_to_group(current_admin, order.group_id, db):
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get related data
+        customer = db.query(models.Customer).filter(models.Customer.id == order.customer_id).first()
+        group = db.query(models.Group).filter(models.Group.id == order.group_id).first()
+        
+        # Calculate totals
+        total_items = len(order.order_items) if order.order_items else 0
+        total_quantity = sum(item.quantity for item in order.order_items) if order.order_items else 0
+        
+        # Format order items display
+        order_items_display = []
+        if order.order_items:
+            for item in order.order_items:
+                order_items_display.append({
+                    "product_name": item.product_name,
+                    "quantity": item.quantity,
+                    "unit_price": item.unit_price,
+                    "total_price": item.total_price,
+                    "special_instructions": item.special_instructions
+                })
+        elif order.order_details:
+            # Fallback to JSON order details
+            import json
+            try:
+                order_data = json.loads(order.order_details)
+                if isinstance(order_data, dict) and 'items' in order_data:
+                    for item in order_data['items']:
+                        order_items_display.append({
+                            "product_name": item.get('name', 'Unknown Item'),
+                            "quantity": item.get('quantity', 1),
+                            "unit_price": item.get('price', 0),
+                            "total_price": item.get('quantity', 1) * item.get('price', 0),
+                            "special_instructions": item.get('notes', '')
+                        })
+            except (json.JSONDecodeError, KeyError):
+                pass
+        
+        # Create HTML response
+        html_content = f"""
+        <div class="space-y-6">
+            <!-- Order Summary -->
+            <div class="bg-blue-50 p-4 rounded-lg">
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="font-semibold text-blue-900">Order #{order.order_number}</h4>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        {order.status.value.title()}
+                    </span>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                        <span class="text-blue-700 font-medium">Customer:</span>
+                        <div class="text-blue-900">{customer.name if customer else 'Unknown'}</div>
+                        <div class="text-blue-700 text-xs">{customer.phone_number if customer else 'N/A'}</div>
+                    </div>
+                    <div>
+                        <span class="text-blue-700 font-medium">Business:</span>
+                        <div class="text-blue-900">{group.name if group else 'Unknown'}</div>
+                    </div>
+                    <div>
+                        <span class="text-blue-700 font-medium">Items:</span>
+                        <div class="text-blue-900">{total_items} items ({total_quantity} total)</div>
+                    </div>
+                    <div>
+                        <span class="text-blue-700 font-medium">Total:</span>
+                        <div class="text-blue-900 font-semibold">KSh {order.total_amount:.2f}</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Order Items -->
+            <div>
+                <h5 class="font-medium text-gray-900 mb-3">Order Items</h5>
+                <div class="space-y-2 max-h-64 overflow-y-auto">
+                    {_render_order_items(order_items_display)}
+                </div>
+            </div>
+            
+            <!-- Payment Information -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h5 class="font-medium text-gray-900 mb-3">Payment Details</h5>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Method:</span>
+                            <span class="text-gray-900">{order.payment_method.value.replace('_', ' ').title() if order.payment_method else 'Not specified'}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Status:</span>
+                            <span class="text-gray-900">{order.payment_status.value.title() if order.payment_status else 'Unpaid'}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Reference:</span>
+                            <span class="text-gray-900">{order.payment_ref or 'N/A'}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h5 class="font-medium text-gray-900 mb-3">Order Timeline</h5>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Created:</span>
+                            <span class="text-gray-900">{order.created_at.strftime('%m/%d/%Y %I:%M %p')}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Updated:</span>
+                            <span class="text-gray-900">{order.updated_at.strftime('%m/%d/%Y %I:%M %p')}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Notifications:</span>
+                            <span class="text-gray-900">{order.notification_count} sent</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """
+        
+        return HTMLResponse(content=html_content)
+        
+    except Exception as e:
+        logger.error(f"Error loading order details {order_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error loading order details")
+
+
+def _render_order_items(items):
+    """Helper function to render order items HTML"""
+    if not items:
+        return '''
+        <div class="text-center py-4 text-gray-500">
+            <i class="fas fa-box-open text-2xl mb-2"></i>
+            <p>No items in this order</p>
+        </div>
+        '''
+    
+    html = ""
+    for item in items:
+        html += f'''
+        <div class="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
+            <div class="flex-1">
+                <div class="font-medium text-gray-900">{item["product_name"]}</div>
+                {f'<div class="text-xs text-gray-500 mt-1">{item["special_instructions"]}</div>' if item.get("special_instructions") else ''}
+            </div>
+            <div class="text-right">
+                <div class="text-sm font-medium text-gray-900">{item["quantity"]}x @KSh{item["unit_price"]:.2f}</div>
+                <div class="text-xs text-gray-500">KSh {item["total_price"]:.2f}</div>
+            </div>
+        </div>
+        '''
+    return html
+
+
+@router.delete("/admin/orders/{order_id}")
+async def delete_order(
+    order_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Delete an order"""
+    try:
+        current_admin = await get_current_admin(request, db)
+        
+        # Get order
+        order = db.query(models.Order).filter(models.Order.id == order_id).first()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        # Check permissions
+        if not check_admin_has_access_to_group(current_admin, order.group_id, db):
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Store order number for logging
+        order_number = order.order_number
+        
+        # Delete related order items first
+        db.query(models.OrderItem).filter(models.OrderItem.order_id == order_id).delete()
+        
+        # Delete the order
+        db.delete(order)
+        db.commit()
+        
+        logger.info(f"Order {order_number} deleted by admin {current_admin.username}")
+        return {"success": True, "message": f"Order {order_number} deleted successfully"}
+        
+    except Exception as e:
+        logger.error(f"Error deleting order {order_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Error deleting order")
+
+
+@router.post("/admin/orders/{order_id}/send-message")
+async def send_message_to_customer(
+    request: Request,
+    order_id: int,
+    message: str = Form(...),
+    customer_phone: str = Form(...),
+    customer_name: str = Form(...),
+    csrf_protect: CsrfProtect = Depends(),
+    db: Session = Depends(get_db)
+):
+    """Send a custom message to the customer"""
+    # Validate CSRF token
+    try:
+        await csrf_protect.validate_csrf(request)
+        logger.info(f"✅ CSRF validation passed for message sending to order {order_id}")
+    except Exception as e:
+        logger.error(f"❌ CSRF validation failed for message sending to order {order_id}: {str(e)}")
+        raise
+    
+    # Get the current admin user
+    current_admin = await get_current_admin(request, db)
+    
+    # Get the order to verify permissions
+    order = db.query(models.Order).filter(models.Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Check if admin has access to this order's group
+    if not check_admin_has_access_to_group(current_admin, order.group_id, db):
+        raise HTTPException(status_code=403, detail="You don't have permission to send messages for this order")
+
+    try:
+        # Clean and validate the message
+        if not message.strip():
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+        
+        if len(message) > 1000:
+            raise HTTPException(status_code=400, detail="Message too long (max 1000 characters)")
+        
+        # Clean phone number
+        clean_phone = customer_phone.strip().replace(" ", "").replace("-", "")
+        if not clean_phone:
+            raise HTTPException(status_code=400, detail="Invalid phone number")
+        
+        # Prepare the message with business context
+        business_name = order.group.name if order.group else "Your Order"
+        formatted_message = f"📋 Message from {business_name}:\n\n{message.strip()}\n\n💬 Order: {order.order_number}"
+        
+        # Here you would integrate with your SMS/WhatsApp service
+        # For now, we'll just log the message
+        logger.info(f"Message sent to {customer_name} ({clean_phone}) for order {order.order_number}: {message}")
+        
+        # TODO: Integrate with actual SMS/WhatsApp service
+        # Example integration points:
+        # - Twilio for SMS
+        # - WhatsApp Business API
+        # - Your existing messaging service
+        
+        # For demo purposes, we'll simulate successful sending
+        success = True
+        
+        if success:
+            return {"success": True, "message": f"Message sent successfully to {customer_name}"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send message")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending message for order {order_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error sending message")

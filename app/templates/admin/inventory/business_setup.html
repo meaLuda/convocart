@@ -1,0 +1,599 @@
+{% extends "base.html" %}
+
+{% block title %}Business Setup | ConvoCart{% endblock %}
+{% block page_title %}Business Setup{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="text-center">
+        <h1 class="text-3xl font-bold text-gray-900">Business Setup Wizard</h1>
+        <p class="text-gray-600 mt-2">Quick setup for African SMEs with pre-configured templates</p>
+    </div>
+
+    <!-- Business Templates Grid -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-store text-purple-500 mr-2"></i>
+                Choose Your Business Type
+            </h3>
+            <p class="text-gray-600 text-sm">Select a template that matches your business to get started quickly</p>
+        </div>
+        <div class="card-body">
+            <div class="space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="businessTypeCards">
+                    {% for business_type, template in business_templates.items() %}
+                    <div class="relative group">
+                        <!-- Hidden Radio Input -->
+                        <input type="radio" 
+                               id="business_{{ business_type }}" 
+                               name="business_type" 
+                               value="{{ business_type }}" 
+                               class="sr-only peer"
+                               onchange="handleBusinessSelection('{{ business_type }}')">
+                        
+                        <!-- Card Label -->
+                        <label for="business_{{ business_type }}" 
+                               class="block cursor-pointer bg-white border-2 border-gray-200 rounded-xl p-6 transition-all duration-300 transform hover:-translate-y-1 hover:border-primary-300 hover:shadow-lg"
+                               id="card_{{ business_type }}">
+                            
+                            <!-- Card Header -->
+                            <div class="flex items-start justify-between mb-4">
+                                <div class="flex items-center space-x-4">
+                                    <!-- Business Icon -->
+                                    <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center text-white text-xl group-hover:scale-110 transition-transform duration-300">
+                                        {% if business_type == 'retail' %}
+                                            <i class="fas fa-shopping-bag"></i>
+                                        {% elif business_type == 'grocery' %}
+                                            <i class="fas fa-apple-alt"></i>
+                                        {% elif business_type == 'pharmacy' %}
+                                            <i class="fas fa-pills"></i>
+                                        {% elif business_type == 'restaurant' %}
+                                            <i class="fas fa-utensils"></i>
+                                        {% elif business_type == 'agriculture' %}
+                                            <i class="fas fa-seedling"></i>
+                                        {% elif business_type == 'electronics' %}
+                                            <i class="fas fa-laptop"></i>
+                                        {% elif business_type == 'fashion' %}
+                                            <i class="fas fa-tshirt"></i>
+                                        {% elif business_type == 'automotive' %}
+                                            <i class="fas fa-car"></i>
+                                        {% elif business_type == 'beauty' %}
+                                            <i class="fas fa-spa"></i>
+                                        {% else %}
+                                            <i class="fas fa-briefcase"></i>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <!-- Title and Description -->
+                                    <div class="flex-1">
+                                        <h3 class="text-lg font-semibold text-gray-900 mb-1">{{ template.name }}</h3>
+                                        <p class="text-sm text-gray-600">{{ template.description }}</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- Selection Checkbox -->
+                                <div class="flex-shrink-0">
+                                    <div class="w-6 h-6 border-2 border-gray-300 rounded-full flex items-center justify-center transition-all duration-200" id="checkbox_{{ business_type }}">
+                                        <i class="fas fa-check text-white text-xs opacity-0 transition-opacity duration-200" id="checkmark_{{ business_type }}"></i>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Quick Stats -->
+                            <div class="grid grid-cols-3 gap-3 mb-4">
+                                <div class="text-center p-2 bg-blue-50 rounded-lg">
+                                    <div class="text-blue-600 text-lg font-bold">{{ template.default_units|length }}</div>
+                                    <div class="text-xs text-blue-600">Units</div>
+                                </div>
+                                <div class="text-center p-2 bg-green-50 rounded-lg">
+                                    <div class="text-green-600 text-lg font-bold">{{ template.typical_products|length }}</div>
+                                    <div class="text-xs text-green-600">Products</div>
+                                </div>
+                                <div class="text-center p-2 bg-purple-50 rounded-lg">
+                                    <div class="text-purple-600 text-lg font-bold">{{ template.pricing_structure|length }}</div>
+                                    <div class="text-xs text-purple-600">Tiers</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Accordion Toggle -->
+                            <button type="button" 
+                                    class="w-full flex items-center justify-between p-2 text-sm text-gray-600 hover:text-primary-600 transition-colors"
+                                    onclick="toggleAccordion('{{ business_type }}', event)">
+                                <span>View Details</span>
+                                <i class="fas fa-chevron-down transform transition-transform duration-200" id="chevron_{{ business_type }}"></i>
+                            </button>
+                        </label>
+                        
+                        <!-- Accordion Content -->
+                        <div class="overflow-hidden transition-all duration-300 max-h-0" id="accordion_{{ business_type }}">
+                            <div class="bg-gray-50 border-2 border-t-0 border-gray-200 rounded-b-xl p-6 space-y-6">
+                                
+                                <!-- Sample Products -->
+                                <div>
+                                    <h4 class="flex items-center text-sm font-medium text-gray-900 mb-3">
+                                        <i class="fas fa-box text-blue-500 mr-2"></i>
+                                        Sample Products
+                                    </h4>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        {% for product in template.typical_products[:4] %}
+                                        <div class="flex justify-between items-center p-2 bg-white rounded-lg">
+                                            <span class="text-sm text-gray-700">{{ product.name }}</span>
+                                            <span class="text-sm font-medium text-primary-600">KSH {{ "%.0f"|format(product.price) }}</span>
+                                        </div>
+                                        {% endfor %}
+                                        {% if template.typical_products|length > 4 %}
+                                        <div class="flex justify-center items-center p-2 bg-primary-100 rounded-lg text-primary-700">
+                                            <span class="text-sm">+{{ template.typical_products|length - 4 }} more</span>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                
+                                <!-- Default Units -->
+                                <div>
+                                    <h4 class="flex items-center text-sm font-medium text-gray-900 mb-3">
+                                        <i class="fas fa-balance-scale text-green-500 mr-2"></i>
+                                        Measurement Units
+                                    </h4>
+                                    <div class="flex flex-wrap gap-2">
+                                        {% for unit in template.default_units[:6] %}
+                                        <span class="px-3 py-1 bg-green-100 text-green-700 text-xs rounded-full capitalize">{{ unit }}</span>
+                                        {% endfor %}
+                                        {% if template.default_units|length > 6 %}
+                                        <span class="px-3 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">+{{ template.default_units|length - 6 }}</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                
+                                <!-- Pricing Structure -->
+                                <div>
+                                    <h4 class="flex items-center text-sm font-medium text-gray-900 mb-3">
+                                        <i class="fas fa-tags text-purple-500 mr-2"></i>
+                                        Pricing Tiers
+                                    </h4>
+                                    <div class="space-y-2">
+                                        {% for tier, config in template.pricing_structure.items() %}
+                                        <div class="flex justify-between items-center p-2 bg-white rounded-lg">
+                                            <span class="text-sm text-gray-700 capitalize">{{ tier.replace('_', ' ') }}</span>
+                                            <span class="text-sm text-purple-600">{{ config.markup }}% markup</span>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <!-- Continue Button -->
+                <div class="text-center space-y-4">
+                    <button type="button" 
+                            id="continueBtn"
+                            class="inline-flex items-center px-8 py-3 bg-gray-300 text-gray-500 cursor-not-allowed font-medium rounded-lg transition-all duration-200 transform"
+                            disabled
+                            onclick="proceedWithSelection()">
+                        <i class="fas fa-arrow-right mr-2"></i>
+                        Continue with Selected Template
+                    </button>
+                    <p class="text-sm text-gray-500" id="continueText">Select a business type above to continue</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Existing Businesses -->
+    {% if existing_businesses %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-building text-blue-500 mr-2"></i>
+                Existing Business Groups
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="overflow-x-auto">
+                <table class="table-auto w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Business Name</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        {% for business in existing_businesses %}
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="flex items-center">
+                                    <div class="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
+                                        <i class="fas fa-store text-primary-600"></i>
+                                    </div>
+                                    <div class="ml-4">
+                                        <div class="text-sm font-medium text-gray-900">{{ business.name }}</div>
+                                        <div class="text-sm text-gray-500">{{ business.description or 'No description' }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="badge badge-info">
+                                    {{ business.business_type.value if business.business_type else 'General' }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ business.created_at.strftime('%m/%d/%Y') }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="badge badge-success">Active</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <button class="btn btn-outline btn-sm mr-2" onclick="setupBusiness({{ business.id }}, '{{ business.business_type.value if business.business_type else 'general' }}')">
+                                    <i class="fas fa-cog mr-1"></i>Setup Inventory
+                                </button>
+                                <a href="/admin/groups/{{ business.id }}" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-eye mr-1"></i>View
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Template Selection Modal -->
+    <div id="templateModal" class="modal">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Setup <span id="templateName"></span> Business</h3>
+                    <button class="modal-close" onclick="closeModal('templateModal')">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="templateDetails"></div>
+                    
+                    <form id="businessSetupForm">
+                        <input type="hidden" id="selectedBusinessType">
+                        <div class="form-group">
+                            <label class="form-label">Select Business Group</label>
+                            <select id="businessGroupSelect" class="form-input" required>
+                                <option value="">Choose existing business group</option>
+                                {% for business in existing_businesses %}
+                                <option value="{{ business.id }}">{{ business.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <h4 class="font-medium text-blue-900 mb-2">What this will set up:</h4>
+                            <ul class="text-sm text-blue-800 space-y-1">
+                                <li><i class="fas fa-check text-blue-600 mr-2"></i>Default inventory location</li>
+                                <li><i class="fas fa-check text-blue-600 mr-2"></i>Business-specific measurement units</li>
+                                <li><i class="fas fa-check text-blue-600 mr-2"></i>Sample products for your business type</li>
+                                <li><i class="fas fa-check text-blue-600 mr-2"></i>Pricing structure templates</li>
+                                <li><i class="fas fa-check text-blue-600 mr-2"></i>AI agent optimization for your industry</li>
+                            </ul>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline" onclick="closeModal('templateModal')">Cancel</button>
+                    <button class="btn btn-primary" onclick="confirmSetup()">
+                        <i class="fas fa-rocket mr-2"></i>Setup Business
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div id="successModal" class="modal">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-body text-center py-8">
+                    <i class="fas fa-check-circle text-green-500 text-5xl mb-4"></i>
+                    <h3 class="text-xl font-bold text-gray-900 mb-2">Setup Complete!</h3>
+                    <p class="text-gray-600 mb-6">Your business inventory system has been configured successfully.</p>
+                    <div class="flex space-x-3 justify-center">
+                        <a href="/admin/inventory/dashboard" class="btn btn-primary">
+                            <i class="fas fa-tachometer-alt mr-2"></i>View Dashboard
+                        </a>
+                        <a href="/admin/inventory/products" class="btn btn-outline">
+                            <i class="fas fa-boxes mr-2"></i>Manage Products
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.badge {
+    @apply px-2 py-1 text-xs font-medium rounded-full;
+}
+
+.badge-info {
+    @apply bg-blue-100 text-blue-800;
+}
+
+.badge-success {
+    @apply bg-green-100 text-green-800;
+}
+
+.btn-sm {
+    @apply px-3 py-1 text-sm;
+}
+
+.modal {
+    @apply fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50;
+}
+
+.modal.show {
+    @apply flex;
+}
+
+.modal-dialog {
+    @apply bg-white rounded-lg shadow-xl max-w-md w-full mx-4;
+}
+
+.modal-lg {
+    @apply max-w-3xl;
+}
+
+.modal-content {
+    @apply w-full;
+}
+
+.modal-header {
+    @apply flex items-center justify-between p-4 border-b;
+}
+
+.modal-title {
+    @apply text-lg font-semibold;
+}
+
+.modal-close {
+    @apply text-gray-400 hover:text-gray-600 text-2xl font-bold;
+}
+
+.modal-body {
+    @apply p-4;
+}
+
+.modal-footer {
+    @apply flex justify-end space-x-2 p-4 border-t;
+}
+
+.form-group {
+    @apply mb-4;
+}
+
+.form-label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+}
+
+.form-input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500;
+}
+</style>
+
+<script>
+// Business templates data
+const businessTemplates = {{ business_templates|tojson }};
+let selectedBusinessType = null;
+
+// Handle business type selection
+function handleBusinessSelection(businessType) {
+    // Update selected type
+    selectedBusinessType = businessType;
+    
+    // Update visual states for all cards
+    const allCards = document.querySelectorAll('[id^="card_"]');
+    const allCheckboxes = document.querySelectorAll('[id^="checkbox_"]');
+    const allCheckmarks = document.querySelectorAll('[id^="checkmark_"]');
+    
+    // Reset all cards to unselected state
+    allCards.forEach(card => {
+        card.className = card.className.replace(/border-primary-500|bg-primary-50|shadow-xl|-translate-y-1/g, '');
+        card.className += ' border-gray-200 hover:border-primary-300 hover:shadow-lg';
+    });
+    
+    allCheckboxes.forEach(checkbox => {
+        checkbox.className = checkbox.className.replace(/border-primary-500|bg-primary-500/g, '');
+        checkbox.className += ' border-gray-300';
+    });
+    
+    allCheckmarks.forEach(checkmark => {
+        checkmark.className = checkmark.className.replace(/opacity-100/g, '');
+        checkmark.className += ' opacity-0';
+    });
+    
+    // Set selected card styles
+    const selectedCard = document.getElementById(`card_${businessType}`);
+    const selectedCheckbox = document.getElementById(`checkbox_${businessType}`);
+    const selectedCheckmark = document.getElementById(`checkmark_${businessType}`);
+    
+    if (selectedCard) {
+        selectedCard.className = selectedCard.className.replace(/border-gray-200|hover:border-primary-300|hover:shadow-lg/g, '');
+        selectedCard.className += ' border-primary-500 bg-primary-50 shadow-xl -translate-y-1';
+    }
+    
+    if (selectedCheckbox) {
+        selectedCheckbox.className = selectedCheckbox.className.replace(/border-gray-300/g, '');
+        selectedCheckbox.className += ' border-primary-500 bg-primary-500';
+    }
+    
+    if (selectedCheckmark) {
+        selectedCheckmark.className = selectedCheckmark.className.replace(/opacity-0/g, '');
+        selectedCheckmark.className += ' opacity-100';
+    }
+    
+    // Update continue button
+    updateContinueButton();
+    
+    // Close any expanded accordions
+    closeAllAccordions();
+}
+
+// Update continue button state
+function updateContinueButton() {
+    const continueBtn = document.getElementById('continueBtn');
+    const continueText = document.getElementById('continueText');
+    
+    if (selectedBusinessType && businessTemplates[selectedBusinessType]) {
+        // Enable button
+        continueBtn.disabled = false;
+        continueBtn.className = continueBtn.className.replace(/bg-gray-300|text-gray-500|cursor-not-allowed/g, '');
+        continueBtn.className += ' bg-primary-600 text-white hover:bg-primary-700 hover:scale-105';
+        
+        // Update help text
+        const templateName = businessTemplates[selectedBusinessType].name;
+        continueText.textContent = `Continue with ${templateName} template`;
+    } else {
+        // Disable button
+        continueBtn.disabled = true;
+        continueBtn.className = continueBtn.className.replace(/bg-primary-600|text-white|hover:bg-primary-700|hover:scale-105/g, '');
+        continueBtn.className += ' bg-gray-300 text-gray-500 cursor-not-allowed';
+        
+        // Reset help text
+        continueText.textContent = 'Select a business type above to continue';
+    }
+}
+
+// Toggle accordion for business type
+function toggleAccordion(businessType, event) {
+    event.stopPropagation();
+    event.preventDefault();
+    
+    const accordion = document.getElementById(`accordion_${businessType}`);
+    const chevron = document.getElementById(`chevron_${businessType}`);
+    
+    if (accordion.style.maxHeight === '0px' || !accordion.style.maxHeight) {
+        // Open accordion
+        accordion.style.maxHeight = '24rem'; // max-h-96 equivalent
+        chevron.style.transform = 'rotate(180deg)';
+    } else {
+        // Close accordion
+        accordion.style.maxHeight = '0px';
+        chevron.style.transform = 'rotate(0deg)';
+    }
+}
+
+// Close all accordions
+function closeAllAccordions() {
+    const accordions = document.querySelectorAll('[id^="accordion_"]');
+    const chevrons = document.querySelectorAll('[id^="chevron_"]');
+    
+    accordions.forEach(accordion => {
+        accordion.style.maxHeight = '0px';
+    });
+    
+    chevrons.forEach(chevron => {
+        chevron.style.transform = 'rotate(0deg)';
+    });
+}
+
+// Proceed with selection
+function proceedWithSelection() {
+    if (!selectedBusinessType) return;
+    
+    const template = businessTemplates[selectedBusinessType];
+    document.getElementById('selectedBusinessType').value = selectedBusinessType;
+    document.getElementById('templateName').textContent = template.name;
+    
+    // Build template details HTML
+    const detailsHtml = `
+        <div class="mb-6">
+            <h4 class="font-medium text-gray-900 mb-3">Template Details</h4>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <h5 class="font-medium text-blue-900 mb-2">Measurement Units</h5>
+                    <div class="space-y-1">
+                        ${template.default_units.slice(0, 4).map(unit => `<span class="badge badge-info mr-1">${unit}</span>`).join('')}
+                        ${template.default_units.length > 4 ? `<span class="text-xs text-gray-600">+${template.default_units.length - 4} more</span>` : ''}
+                    </div>
+                </div>
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <h5 class="font-medium text-green-900 mb-2">Sample Products</h5>
+                    <div class="space-y-1">
+                        ${template.typical_products.slice(0, 3).map(product => `<div class="text-sm text-green-800">${product.name}</div>`).join('')}
+                        ${template.typical_products.length > 3 ? `<div class="text-xs text-gray-600">+${template.typical_products.length - 3} more</div>` : ''}
+                    </div>
+                </div>
+                <div class="bg-purple-50 p-4 rounded-lg">
+                    <h5 class="font-medium text-purple-900 mb-2">Pricing Tiers</h5>
+                    <div class="space-y-1">
+                        ${Object.keys(template.pricing_structure).map(tier => `<div class="text-sm text-purple-800">${tier.replace('_', ' ')}</div>`).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('templateDetails').innerHTML = detailsHtml;
+    document.getElementById('templateModal').classList.add('show');
+}
+
+function setupBusiness(groupId, businessType) {
+    if (confirm(`Set up enhanced inventory for this business using ${businessType} template?`)) {
+        performSetup(groupId, businessType);
+    }
+}
+
+function confirmSetup() {
+    const groupId = document.getElementById('businessGroupSelect').value;
+    const businessType = document.getElementById('selectedBusinessType').value;
+    
+    if (!groupId) {
+        alert('Please select a business group');
+        return;
+    }
+    
+    performSetup(groupId, businessType);
+}
+
+function performSetup(groupId, businessType) {
+    const formData = new FormData();
+    formData.append('group_id', groupId);
+    formData.append('business_type', businessType);
+    
+    fetch('/admin/inventory/setup-business', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            closeModal('templateModal');
+            document.getElementById('successModal').classList.add('show');
+        } else {
+            alert('Error setting up business: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error setting up business');
+    });
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).classList.remove('show');
+}
+
+// Close modals when clicking outside
+window.onclick = function(event) {
+    const modals = document.querySelectorAll('.modal');
+    modals.forEach(modal => {
+        if (event.target === modal) {
+            modal.classList.remove('show');
+        }
+    });
+}
+</script>
+{% endblock %}
