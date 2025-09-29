@@ -27,7 +27,13 @@ class AnalyticsService:
     
     def __init__(self, db: Session):
         self.db = db
-        self.cache = get_cache_service()
+        self._cache = None
+        
+    async def _get_cache(self):
+        """Lazy cache initialization"""
+        if self._cache is None:
+            self._cache = await get_cache_service()
+        return self._cache
     
     # ==========================================
     # CUSTOMER BEHAVIOR ANALYTICS

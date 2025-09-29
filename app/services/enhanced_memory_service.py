@@ -22,7 +22,13 @@ class EnhancedMemoryService:
     
     def __init__(self, db_session: Session):
         self.db = db_session
-        self.cache = get_cache_service()
+        self._cache = None
+        
+    async def _get_cache(self):
+        """Lazy cache initialization"""
+        if self._cache is None:
+            self._cache = await get_cache_service()
+        return self._cache
     
     def get_conversation_context(self, customer_id: int) -> Dict[str, Any]:
         """

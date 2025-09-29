@@ -69,7 +69,7 @@ class OrderBotAgent:
         self.analytics_service = get_analytics_service(db)
         self.business_config_service = get_business_config_service(db)
         self.enhanced_memory = get_enhanced_memory_service(db)
-        self.cache_service = get_cache_service()
+        self._cache_service = None
         self.rate_limiter = get_rate_limiter()
         self.api_monitor = get_api_monitor(db)
         
@@ -106,6 +106,12 @@ class OrderBotAgent:
         
         # Build the conversation graph
         self.graph = self._build_conversation_graph()
+        
+    async def _get_cache_service(self):
+        """Lazy cache service initialization"""
+        if self._cache_service is None:
+            self._cache_service = await get_cache_service()
+        return self._cache_service
         
     def _build_conversation_graph(self) -> StateGraph:
         """Build the LangGraph conversation flow"""
@@ -583,15 +589,19 @@ PAYMENT_CONFIRMATION Examples:
 - "Confirmed. KSH 500.00 sent to..." → M-Pesa confirmation
 - "I have paid via M-Pesa ref: ABC123" → Payment confirmation
 
-PAYMENT_SELECTION Examples (when awaiting_payment):
-- "1" → Option 1 selection
-- "2" → Option 2 selection
-- "3" → Option 3 selection
+WELCOME MENU Examples (when conversation_state=welcome):
+- "1" → place_order (selecting "Place Order" menu option)
+- "2" → track_order (selecting "Track My Order" menu option)
+
+PAYMENT_SELECTION Examples (when conversation_state=awaiting_payment):
+- "1" → payment_selection (selecting "M-Pesa" payment option)
+- "2" → payment_selection (selecting "Cash on Delivery" option)
+- "3" → payment_selection (selecting "Cancel Order" option)
 
 ORDER_REQUEST Examples:
-- "2 [items], 1 [item] size X" → ORDER with specific items
-- "I want to order [product]" → ORDER request
-- "order from group:[business]" → GROUP joining + ORDER"""
+- "2 [items], 1 [item] size X" → place_order with specific items
+- "I want to order [product]" → place_order request
+- "order from group:[business]" → place_order (GROUP joining + ORDER)"""
 
             # STEP 4: Intent Categories
             intent_definitions = """
@@ -608,19 +618,28 @@ INTENT CATEGORIES:
 9. general_inquiry: General business questions
 10. unknown: Unclear or ambiguous intent"""
 
-            # STEP 5: Payment Context (if applicable)
-            payment_context = ""
+            # STEP 5: State-Specific Context (Critical for intent detection)
+            state_context = ""
             if conversation_state == "awaiting_payment":
-                payment_context = """
+                state_context = """
 PAYMENT CONTEXT: Customer was presented with payment options:
 1. Paid with M-Pesa / 2. Pay on Delivery / 3. Cancel Order
 Numbers 1,2,3 = payment_selection intent"""
+            elif conversation_state == "welcome":
+                state_context = """
+WELCOME MENU CONTEXT: Customer just received welcome message with menu options:
+1. Place Order / 2. Track My Order
+Numbers 1,2 = place_order/track_order intent (NOT payment_selection)"""
+            elif conversation_state == "awaiting_order_details":
+                state_context = """
+ORDER CONTEXT: Customer should provide order details (items, quantities, specifications)
+Text descriptions = place_order intent"""
 
             # STEP 6: Output Format
             output_format = """
 OUTPUT: Respond with ONLY the intent name from the list above."""
 
-            return f"{role_context}\n\n{reasoning_framework}\n\n{few_shot_examples}\n\n{intent_definitions}\n\n{payment_context}\n\n{output_format}".strip()
+            return f"{role_context}\n\n{reasoning_framework}\n\n{few_shot_examples}\n\n{intent_definitions}\n\n{state_context}\n\n{output_format}".strip()
 
         except Exception as e:
             logger.error(f"Error building intent detection prompt: {e}")

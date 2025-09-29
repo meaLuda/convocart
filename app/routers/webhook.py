@@ -705,7 +705,7 @@ async def handle_customer_message_with_context(customer, event_data, db, current
                 place_order_msg += "- Item names\n- Quantities\n- Any special requests\n\n"
                 place_order_msg += "Example: '2 red t-shirts size L, 1 black hoodie size XL'"
                 whatsapp_service.send_text_message(phone_number, place_order_msg)
-                session.update_state(ConversationState.AWAITING_ORDER)
+                session.update_state(ConversationState.AWAITING_ORDER_DETAILS)
                 db.commit()
                 return
             elif intent == "track_order":

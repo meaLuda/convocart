@@ -194,9 +194,10 @@ class WhatsAppService:
                 actions.append(action)
             
             # Create content variables for quick reply template
+            # Note: actions/buttons should be defined in the Twilio template itself
+            # Content variables only support simple string substitutions
             content_variables = {
-                "1": self._truncate_string(message, 1024),  # Body text
-                "actions": actions
+                "1": self._truncate_string(message, 1024)  # Body text
             }
             
             # Try to send using a pre-created quick reply content template
