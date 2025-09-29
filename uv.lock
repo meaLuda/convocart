@@ -414,7 +414,7 @@ requires-dist = [
     { name = "langchain", specifier = ">=0.3.0" },
     { name = "langchain-community", specifier = ">=0.3.0" },
     { name = "langchain-google-genai", specifier = ">=2.0.0" },
-    { name = "langgraph", specifier = ">=0.2.0" },
+    { name = "langgraph", specifier = ">=0.2.14" },
     { name = "openpyxl", specifier = ">=3.1.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "passlib", specifier = ">=1.7.4" },

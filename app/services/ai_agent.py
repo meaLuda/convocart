@@ -34,7 +34,7 @@ class AgentState(TypedDict):
     """
     Enhanced state for AI agent conversation flow using LangGraph v0.3+ best practices
     
-    This replaces the custom ConversationSession system with LangGraph's built-in state management
+    This synchronizes with ConversationSession to prevent state conflicts and ensure consistency
     """
     # LangGraph v0.3+ pattern: Use Annotated with add_messages for proper message handling
     messages: Annotated[List[BaseMessage], add_messages]
@@ -43,7 +43,7 @@ class AgentState(TypedDict):
     customer_id: int
     group_id: int
     
-    # Conversation flow state
+    # Conversation flow state (synchronized with ConversationSession)
     current_intent: str
     conversation_state: str
     last_action: str
@@ -63,6 +63,16 @@ class AgentState(TypedDict):
     # Conversation history management (LangGraph pattern)
     conversation_summary: Optional[str]  # For long conversation summarization
     total_messages: int  # Message count tracking
+    
+    # NEW: State synchronization fields to prevent conflicts
+    conversation_session_id: Optional[int]  # Link to ConversationSession
+    last_sync_timestamp: Optional[str]  # When state was last synchronized
+    previous_actions: List[str]  # Track previous actions to prevent clarification loops
+    
+    # NEW: Action tracking to prevent repetitive behavior
+    recent_ai_actions: List[Dict[str, Any]]  # Track recent AI actions with timestamps
+    clarification_count: int  # Track how many times we've asked for clarification
+    order_creation_attempts: int  # Track order creation attempts to prevent loops
 
 class Intent(str, Enum):
     """Customer intents the AI can detect"""
@@ -78,6 +88,173 @@ class Intent(str, Enum):
     PRODUCT_INQUIRY = "product_inquiry"
     GENERAL_INQUIRY = "general_inquiry"
     UNKNOWN = "unknown"
+
+class StateSynchronizationManager:
+    """
+    Manages bi-directional synchronization between AgentState and ConversationSession
+    to prevent state conflicts and ensure consistency across AI and rule-based processing
+    """
+    
+    def __init__(self, db: Session):
+        self.db = db
+        self.logger = logging.getLogger(__name__ + ".StateSyncManager")
+    
+    def sync_agent_state_to_session(self, agent_state: AgentState) -> bool:
+        """Sync AgentState changes to ConversationSession"""
+        try:
+            from app.models import ConversationSession, ConversationState
+            
+            customer_id = agent_state.get("customer_id")
+            if not customer_id:
+                return False
+                
+            # Get or create conversation session
+            session = ConversationSession.get_or_create_session(self.db, customer_id)
+            
+            # Sync state changes from AgentState to ConversationSession
+            conversation_state = agent_state.get("conversation_state")
+            if conversation_state:
+                try:
+                    # Convert string state to ConversationState enum
+                    if isinstance(conversation_state, str):
+                        new_state = ConversationState(conversation_state)
+                    else:
+                        new_state = conversation_state
+                    
+                    if session.current_state != new_state:
+                        self.logger.info(f"Syncing state from AI agent: {session.current_state} -> {new_state}")
+                        session.update_state(new_state, force=True)
+                except ValueError as e:
+                    self.logger.warning(f"Invalid conversation state from AI agent: {conversation_state}, error: {e}")
+            
+            # Sync context data
+            context = agent_state.get("context", {})
+            if context:
+                session.update_context(context)
+            
+            # Update metadata with AI action tracking
+            session_metadata = agent_state.get("session_metadata", {})
+            session_metadata["last_ai_sync"] = datetime.utcnow().isoformat()
+            session_metadata["last_action"] = agent_state.get("last_action")
+            session_metadata["last_intent"] = agent_state.get("current_intent")
+            session.session_metadata = session_metadata
+            
+            self.db.commit()
+            
+            # Update agent state with session ID for reference
+            agent_state["conversation_session_id"] = session.id
+            agent_state["last_sync_timestamp"] = datetime.utcnow().isoformat()
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error syncing agent state to session: {str(e)}")
+            self.db.rollback()
+            return False
+    
+    def sync_session_to_agent_state(self, agent_state: AgentState, session_id: int = None) -> bool:
+        """Sync ConversationSession changes to AgentState"""  
+        try:
+            from app.models import ConversationSession
+            
+            customer_id = agent_state.get("customer_id")
+            if not customer_id:
+                return False
+            
+            # Get session by ID or customer_id
+            if session_id:
+                session = self.db.query(ConversationSession).filter(
+                    ConversationSession.id == session_id
+                ).first()
+            else:
+                session = ConversationSession.get_or_create_session(self.db, customer_id)
+            
+            if not session:
+                return False
+            
+            # Sync ConversationSession state to AgentState
+            agent_state["conversation_state"] = session.current_state.value
+            agent_state["context"] = session.get_context()
+            agent_state["conversation_session_id"] = session.id
+            
+            # Load previous actions to prevent loops
+            previous_actions = session.session_metadata.get("previous_actions", [])
+            agent_state["previous_actions"] = previous_actions
+            
+            self.logger.info(f"Synced session state to AI agent: state={session.current_state.value}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error syncing session to agent state: {str(e)}")
+            return False
+    
+    def detect_state_conflicts(self, agent_state: AgentState) -> List[str]:
+        """Detect potential state conflicts between AgentState and ConversationSession"""  
+        conflicts = []
+        
+        try:
+            from app.models import ConversationSession
+            
+            customer_id = agent_state.get("customer_id")
+            if not customer_id:
+                return conflicts
+            
+            session = ConversationSession.get_or_create_session(self.db, customer_id)
+            
+            # Check state consistency
+            agent_conversation_state = agent_state.get("conversation_state")
+            session_conversation_state = session.current_state.value
+            
+            if agent_conversation_state and agent_conversation_state != session_conversation_state:
+                conflicts.append(f"State mismatch: Agent={agent_conversation_state}, Session={session_conversation_state}")
+            
+            # Check for action conflicts
+            last_action = agent_state.get("last_action")
+            session_last_action = session.session_metadata.get("last_action")
+            
+            if last_action and session_last_action and last_action != session_last_action:
+                conflicts.append(f"Action mismatch: Agent={last_action}, Session={session_last_action}")
+            
+            # Check for clarification loops
+            clarification_count = agent_state.get("clarification_count", 0)
+            if clarification_count > 2:
+                conflicts.append(f"Potential clarification loop detected: {clarification_count} attempts")
+            
+            return conflicts
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting state conflicts: {str(e)}")
+            return [f"Error during conflict detection: {str(e)}"]
+    
+    def resolve_state_conflicts(self, agent_state: AgentState, conflicts: List[str]) -> bool:
+        """Attempt to resolve detected state conflicts"""  
+        try:
+            self.logger.warning(f"Resolving {len(conflicts)} state conflicts")
+            
+            for conflict in conflicts:
+                self.logger.warning(f"Conflict: {conflict}")
+            
+            # Strategy: ConversationSession is the source of truth for state
+            # Sync session state to agent state to resolve conflicts
+            success = self.sync_session_to_agent_state(agent_state)
+            
+            if success:
+                # Reset action counters to break loops
+                agent_state["clarification_count"] = 0
+                agent_state["order_creation_attempts"] = 0
+                agent_state["error_context"] = {
+                    "resolved_conflicts": conflicts,
+                    "resolution_timestamp": datetime.utcnow().isoformat()
+                }
+                
+                self.logger.info("State conflicts resolved successfully")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Error resolving state conflicts: {str(e)}")
+            return False
 
 class OrderBotAgent:
     """
@@ -95,6 +272,9 @@ class OrderBotAgent:
         self._cache_service = None
         self.rate_limiter = get_rate_limiter()
         self.api_monitor = get_api_monitor(db)
+        
+        # NEW: State synchronization manager
+        self.state_sync_manager = StateSynchronizationManager(db)
         
         # Initialize Gemini model
         if not self.settings.gemini_api_key:
@@ -329,13 +509,55 @@ class OrderBotAgent:
             state["current_intent"] = Intent.UNKNOWN
             return state
     
+    def _track_conversation_step(self, state: AgentState, action: str, details: str = "") -> None:
+        """Track conversation steps to prevent loops and maintain action history"""
+        try:
+            timestamp = datetime.utcnow().isoformat()
+            
+            # Update previous actions list
+            previous_actions = state.get("previous_actions", [])
+            previous_actions.append(action)
+            # Keep only last 10 actions to prevent memory bloat
+            state["previous_actions"] = previous_actions[-10:] if len(previous_actions) > 10 else previous_actions
+            
+            # Update recent AI actions with detailed tracking
+            recent_ai_actions = state.get("recent_ai_actions", [])
+            action_record = {
+                "action": action,
+                "details": details,
+                "timestamp": timestamp,
+                "conversation_state": state.get("conversation_state", "unknown")
+            }
+            recent_ai_actions.append(action_record)
+            # Keep only last 5 detailed records to prevent memory bloat  
+            state["recent_ai_actions"] = recent_ai_actions[-5:] if len(recent_ai_actions) > 5 else recent_ai_actions
+            
+            # Update counters for loop detection
+            if "clarification" in action.lower():
+                state["clarification_count"] = state.get("clarification_count", 0) + 1
+                
+            if "order" in action.lower() and ("create" in action.lower() or "extract" in action.lower()):
+                state["order_creation_attempts"] = state.get("order_creation_attempts", 0) + 1
+            
+            # Update last action
+            state["last_action"] = action
+            
+            logger.info(f"📝 Tracked conversation step: {action} (clarifications: {state.get('clarification_count', 0)}, orders: {state.get('order_creation_attempts', 0)})")
+            
+        except Exception as e:
+            logger.error(f"Error tracking conversation step: {str(e)}")
+
     async def _process_order_node(self, state: AgentState) -> AgentState:
         """Enhanced order processing with inventory checking and business-specific handling"""
         try:
+            # Track this processing step
+            self._track_conversation_step(state, "process_order_node_started", "Processing customer order request")
+            
             messages = state["messages"]
             latest_message = messages[-1] if messages else None
             
             if not latest_message:
+                self._track_conversation_step(state, "process_order_no_message", "No message found to process")
                 return state
             
             # Get business context
@@ -343,11 +565,14 @@ class OrderBotAgent:
             business_type = group.business_type if group else BusinessType.GENERAL
             
             # Extract order details using business-specific AI
+            self._track_conversation_step(state, "extracting_order_details", f"Attempting order extraction from: {latest_message.content[:50]}...")
             order_details = await self._extract_order_details_enhanced(
                 latest_message.content, state, business_type
             )
             
             if order_details and order_details.get("items"):
+                self._track_conversation_step(state, "order_details_extracted", f"Successfully extracted {len(order_details['items'])} items")
+                
                 # Check inventory availability for each item
                 availability_check = self._check_order_availability(order_details, state["group_id"])
                 
@@ -359,6 +584,8 @@ class OrderBotAgent:
                     state["order_data"] = order_details
                     state["last_action"] = "order_extracted"
                     state["conversation_state"] = ConversationState.AWAITING_PAYMENT.value
+                    
+                    self._track_conversation_step(state, "order_successfully_created", f"Order created with {len(order_details['items'])} items, proceeding to payment")
                 else:
                     # Some items unavailable - provide alternatives
                     alternatives = self._suggest_alternatives(availability_check["unavailable_items"], state["customer_id"])
@@ -367,7 +594,12 @@ class OrderBotAgent:
                         "suggested_alternatives": alternatives
                     }
                     state["last_action"] = "inventory_issues_found"
+                    
+                    self._track_conversation_step(state, "inventory_issues_found", f"Found availability issues for {len(availability_check['unavailable_items'])} items")
             else:
+                # CRITICAL: Track clarification requests to prevent loops
+                self._track_conversation_step(state, "order_clarification_needed", f"Could not extract order details, requesting clarification (attempt #{state.get('clarification_count', 0) + 1})")
+                
                 # Use business-specific clarification
                 clarification_type = self._get_business_specific_clarification(business_type, latest_message.content)
                 state["order_data"] = {"clarification_type": clarification_type}
@@ -575,6 +807,32 @@ class OrderBotAgent:
             business_type = self._get_business_type_str(group.business_type) if group and group.business_type else "retail"
             conversation_state = state.get('conversation_state', 'initial') if state else 'initial'
             
+            # NEW: Extract previous action memory to prevent clarification loops
+            last_action = state.get('last_action', '')
+            previous_actions = state.get('previous_actions', [])
+            recent_ai_actions = state.get('recent_ai_actions', [])
+            clarification_count = state.get('clarification_count', 0)
+            order_creation_attempts = state.get('order_creation_attempts', 0)
+            
+            # Build previous action context (CRITICAL FIX)
+            action_memory_context = ""
+            if last_action:
+                action_memory_context += f"LAST ACTION TAKEN: {last_action}\n"
+                
+            if previous_actions and len(previous_actions) > 0:
+                recent_actions = previous_actions[-3:] if len(previous_actions) > 3 else previous_actions
+                action_memory_context += f"RECENT ACTIONS: {' → '.join(recent_actions)}\n"
+                
+            if clarification_count > 0:
+                action_memory_context += f"CLARIFICATION ATTEMPTS: {clarification_count} (avoid more clarifications)\n"
+                
+            if order_creation_attempts > 0:
+                action_memory_context += f"ORDER CREATION ATTEMPTS: {order_creation_attempts}\n"
+                
+            if recent_ai_actions:
+                recent_action_summary = [f"{action.get('action', '')} at {action.get('timestamp', '')[:16]}" for action in recent_ai_actions[-2:]]
+                action_memory_context += f"RECENT AI ACTIONS: {', '.join(recent_action_summary)}\n"
+            
             # STEP 1: Role + Context (Structured Context)
             role_context = f"""You are an expert conversational AI for {group_name}, a WhatsApp commerce assistant for SMEs in Africa.
 
@@ -582,7 +840,16 @@ CUSTOMER CONTEXT:
 - Current conversation state: {conversation_state}
 - Business type: {business_type}
 
-TASK: Analyze the customer's message using step-by-step reasoning to determine their intent."""
+PREVIOUS ACTION MEMORY (CRITICAL - Read this carefully):
+{action_memory_context if action_memory_context else "No previous actions recorded"}
+
+TASK: Analyze the customer's message using step-by-step reasoning to determine their intent.
+
+⚠️  IMPORTANT CONTEXT RULES:
+1. If you just created/extracted an order (last_action contains 'order'), do NOT ask for clarification again
+2. If clarification_count > 0, avoid asking for more clarifications - try to work with what you have
+3. If order_creation_attempts > 1, focus on completing the existing order rather than starting new ones
+4. Remember your previous actions to provide consistent responses"""
 
             # STEP 2: Chain-of-Thought Reasoning Framework
             reasoning_framework = """
@@ -1106,10 +1373,29 @@ Generate your contextually appropriate response:"""
             business_config = self.business_config_service.get_business_template(business_type)
             typical_attributes = business_config.get("typical_product_attributes", [])
             
+            # NEW: Add previous action memory to prevent repeated extractions
+            last_action = state.get('last_action', '')
+            clarification_count = state.get('clarification_count', 0)
+            order_creation_attempts = state.get('order_creation_attempts', 0)
+            
+            # Build action memory context for order extraction  
+            action_memory_note = ""
+            if order_creation_attempts > 0:
+                action_memory_note += f"\\n\\nIMPORTANT: This is order creation attempt #{order_creation_attempts + 1}. "
+                action_memory_note += "Be more lenient with partial information to avoid loops."
+                
+            if clarification_count > 1:
+                action_memory_note += f"\\n\\nIMPORTANT: Customer has been asked for clarification {clarification_count} times. "
+                action_memory_note += "Extract whatever order details you can find, even if incomplete."
+                
+            if "order" in last_action.lower():
+                action_memory_note += f"\\n\\nIMPORTANT: Last action was '{last_action}'. "
+                action_memory_note += "Avoid asking for more details - work with what's provided."
+            
             prompt = f"""Extract order details from this {self._get_business_type_str(business_type)} customer message: "{message}"
 
             Business context: This is a {self._get_business_type_str(business_type)} business.
-            Typical product attributes to look for: {', '.join(typical_attributes)}
+            Typical product attributes to look for: {', '.join(typical_attributes)}{action_memory_note}
 
             Return a JSON object with:
             - items: array of {{name: string, quantity: number, notes: string, attributes: object}}
@@ -1120,7 +1406,13 @@ Generate your contextually appropriate response:"""
             For {self._get_business_type_str(business_type)} businesses, pay special attention to:
             {self._get_business_specific_extraction_notes(business_type)}
 
-            If you cannot extract clear order details, return null.
+            EXTRACTION RULES:
+            1. Be lenient - extract even partial order information to prevent clarification loops
+            2. If quantities aren't specified, assume quantity=1
+            3. If sizes/colors aren't specified, note them as "not specified" rather than returning null
+            4. Try to extract something useful rather than returning null
+
+            If you genuinely cannot extract ANY order details, return null.
 
             Customer message: {message}
             """
@@ -1431,11 +1723,73 @@ Generate your contextually appropriate response:"""
                 state_version="v2.0",
                 error_context=None,
                 conversation_summary=None,
-                total_messages=0
+                total_messages=0,
+                
+                # NEW: Initialize state sync fields to prevent loops
+                conversation_session_id=None,
+                last_sync_timestamp=None,
+                previous_actions=[],
+                recent_ai_actions=[],
+                clarification_count=0,
+                order_creation_attempts=0
             )
+            
+            # CRITICAL FIX: State validation and synchronization checkpoints
+            logger.info(f"🔄 Pre-execution state sync for customer {customer_id}")
+            
+            # CHECKPOINT 1: Sync session state to agent state
+            sync_success = self.state_sync_manager.sync_session_to_agent_state(initial_state)
+            if not sync_success:
+                logger.warning(f"Failed to sync session state for customer {customer_id}")
+            
+            # CHECKPOINT 2: Detect and resolve state conflicts
+            conflicts = self.state_sync_manager.detect_state_conflicts(initial_state)
+            if conflicts:
+                logger.warning(f"State conflicts detected for customer {customer_id}: {conflicts}")
+                conflict_resolved = self.state_sync_manager.resolve_state_conflicts(initial_state, conflicts)
+                if not conflict_resolved:
+                    logger.error(f"Failed to resolve state conflicts for customer {customer_id}")
+                    return {
+                        "intent": Intent.UNKNOWN,
+                        "action": "state_conflict_error",
+                        "response": "I'm experiencing a temporary issue with conversation context. Please try again."
+                    }
+            
+            # CHECKPOINT 3: Clarification loop detection (CRITICAL FIX)
+            clarification_count = initial_state.get("clarification_count", 0)
+            order_creation_attempts = initial_state.get("order_creation_attempts", 0)
+            
+            if clarification_count > 2:
+                logger.warning(f"Clarification loop detected for customer {customer_id}: {clarification_count} attempts")
+                # Break the loop by providing direct help
+                return {
+                    "intent": Intent.UNKNOWN,
+                    "action": "clarification_loop_break",
+                    "response": "I notice we've been going back and forth. Let me help you more directly. Please provide your order in this format: 'I want [quantity] [item name] [size/color if needed]'. For example: 'I want 2 red t-shirts size L'."
+                }
+            
+            if order_creation_attempts > 3:
+                logger.warning(f"Order creation loop detected for customer {customer_id}: {order_creation_attempts} attempts")
+                return {
+                    "intent": Intent.UNKNOWN,
+                    "action": "order_creation_loop_break",
+                    "response": "I'm having trouble processing your order. Please contact our support team for direct assistance, or try placing a simple order with just the item name and quantity."
+                }
+            
+            logger.info(f"✅ State validation passed for customer {customer_id}")
             
             # Run the conversation graph with LangGraph persistence
             result = await self.graph.ainvoke(initial_state, config=config)
+            
+            # CHECKPOINT 4: Post-execution state synchronization
+            logger.info(f"🔄 Post-execution state sync for customer {customer_id}")
+            
+            # Sync the result state back to ConversationSession
+            post_sync_success = self.state_sync_manager.sync_agent_state_to_session(result)
+            if not post_sync_success:
+                logger.warning(f"Failed to sync result state to session for customer {customer_id}")
+            
+            logger.info(f"✅ AI agent processing completed for customer {customer_id}: action={result.get('last_action')}")
             
             return {
                 "intent": result["current_intent"],
@@ -1463,9 +1817,7 @@ Generate your contextually appropriate response:"""
                     "response": "I encountered an error processing your message. Please try again."
                 }
     
-    # NOTE: Conversation history management methods removed
-    # LangGraph v0.3+ MemorySaver checkpointer handles conversation persistence automatically
-    # No need for custom _load_conversation_history or _save_conversation_turn methods
+    # NOTE: Conversation persistence is handled automatically by LangGraph MemorySaver checkpointer
     
     def _validate_and_clean_messages(self, messages: List) -> List:
         """
@@ -1688,6 +2040,156 @@ Generate your contextually appropriate response:"""
         except Exception as e:
             logger.error(f"Error finding best variant match: {str(e)}")
             return None
+    
+    def _detect_stuck_conversation(self, state: AgentState) -> Optional[Dict[str, Any]]:
+        """Detect if conversation is stuck in a loop or invalid state"""
+        try:
+            stuck_indicators = []
+            
+            # Check for excessive clarifications
+            clarification_count = state.get("clarification_count", 0)
+            if clarification_count > 3:
+                stuck_indicators.append({"type": "excessive_clarifications", "count": clarification_count})
+            
+            # Check for excessive order creation attempts
+            order_attempts = state.get("order_creation_attempts", 0)
+            if order_attempts > 4:
+                stuck_indicators.append({"type": "excessive_order_attempts", "count": order_attempts})
+            
+            # Check for repetitive actions
+            recent_actions = state.get("recent_ai_actions", [])
+            if len(recent_actions) >= 3:
+                last_3_actions = [action.get("action", "") for action in recent_actions[-3:]]
+                if len(set(last_3_actions)) == 1:  # All same action
+                    stuck_indicators.append({"type": "repetitive_action", "action": last_3_actions[0]})
+            
+            # Check for invalid state transitions
+            conversation_state = state.get("conversation_state", "")
+            last_action = state.get("last_action", "")
+            
+            # Detect invalid combinations
+            if conversation_state == "awaiting_payment" and "clarification" in last_action.lower():
+                stuck_indicators.append({"type": "invalid_state_action", "state": conversation_state, "action": last_action})
+            
+            # Check session age without progress
+            session_metadata = state.get("session_metadata", {})
+            start_time = session_metadata.get("start_time", "")
+            if start_time:
+                try:
+                    session_start = datetime.fromisoformat(start_time)
+                    session_duration = (datetime.utcnow() - session_start).total_seconds()
+                    
+                    # If session is over 10 minutes with lots of actions but no order completion
+                    if session_duration > 600 and len(recent_actions) > 5:
+                        order_completed = any("order_successfully_created" in action.get("action", "") for action in recent_actions)
+                        if not order_completed:
+                            stuck_indicators.append({"type": "long_session_no_progress", "duration": session_duration})
+                except ValueError:
+                    pass
+            
+            if stuck_indicators:
+                return {
+                    "stuck": True,
+                    "indicators": stuck_indicators,
+                    "severity": len(stuck_indicators),
+                    "recommended_action": self._get_recovery_recommendation(stuck_indicators)
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error detecting stuck conversation: {str(e)}")
+            return None
+    
+    def _get_recovery_recommendation(self, stuck_indicators: List[Dict[str, Any]]) -> str:
+        """Get recommended recovery action based on stuck indicators"""
+        indicator_types = [indicator["type"] for indicator in stuck_indicators]
+        
+        if "excessive_clarifications" in indicator_types:
+            return "reset_to_simple_order"
+        elif "excessive_order_attempts" in indicator_types:
+            return "escalate_to_human"
+        elif "repetitive_action" in indicator_types:
+            return "break_action_loop"
+        elif "invalid_state_action" in indicator_types:
+            return "reset_conversation_state"
+        elif "long_session_no_progress" in indicator_types:
+            return "restart_conversation"
+        else:
+            return "generic_recovery"
+    
+    def _recover_stuck_conversation(self, state: AgentState, stuck_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Attempt to recover from stuck conversation state"""
+        try:
+            recovery_action = stuck_info.get("recommended_action", "generic_recovery")
+            customer_id = state.get("customer_id")
+            
+            logger.warning(f"🚑 Attempting conversation recovery for customer {customer_id}: {recovery_action}")
+            
+            if recovery_action == "reset_to_simple_order":
+                # Reset clarification count and provide simple order prompt
+                state["clarification_count"] = 0
+                state["order_creation_attempts"] = 0
+                state["conversation_state"] = "awaiting_order_details"
+                
+                response = "Let's start fresh! Please tell me what you'd like to order using this simple format: 'I want [quantity] [item name]'. For example: 'I want 2 t-shirts' or 'I want 1 pizza'."
+                
+            elif recovery_action == "escalate_to_human":
+                # Escalate to human support
+                state["conversation_state"] = "waiting_for_support"
+                response = "I'm having difficulty processing your order. Let me connect you with our support team who can assist you directly. Please hold on while I transfer your request."
+                
+            elif recovery_action == "break_action_loop":
+                # Break repetitive action loop
+                state["last_action"] = "loop_break_recovery"
+                state["conversation_state"] = "idle"
+                
+                response = f"I notice we're going in circles. Let me help you differently. What specific item would you like to order? Just tell me the name of what you want."
+                
+            elif recovery_action == "reset_conversation_state":
+                # Reset to valid state
+                state["conversation_state"] = "idle"
+                state["clarification_count"] = 0
+                state["order_creation_attempts"] = 0
+                
+                response = "Let's start over. How can I help you today? You can place an order, track an existing order, or ask about our products."
+                
+            elif recovery_action == "restart_conversation":
+                # Full conversation restart
+                state["conversation_state"] = "welcome"
+                state["clarification_count"] = 0
+                state["order_creation_attempts"] = 0
+                state["previous_actions"] = []
+                state["recent_ai_actions"] = []
+                
+                response = "I'm going to restart our conversation to give you a better experience. Welcome! How can I assist you today?"
+                
+            else:  # generic_recovery
+                state["conversation_state"] = "idle"
+                response = "Let me help you in a different way. What would you like to do: place an order, track an order, or get information about our products?"
+            
+            # Track the recovery action
+            self._track_conversation_step(state, f"conversation_recovered_{recovery_action}", f"Recovered from stuck state using {recovery_action}")
+            
+            logger.info(f"✅ Conversation recovery completed for customer {customer_id}: {recovery_action}")
+            
+            return {
+                "intent": Intent.UNKNOWN,
+                "action": f"conversation_recovered_{recovery_action}",
+                "response": response,
+                "conversation_state": state.get("conversation_state"),
+                "context": state.get("context", {})
+            }
+            
+        except Exception as e:
+            logger.error(f"Error recovering stuck conversation: {str(e)}")
+            return {
+                "intent": Intent.UNKNOWN,
+                "action": "recovery_error",
+                "response": "I'm experiencing technical difficulties. Please contact our support team for assistance.",
+                "conversation_state": "error",
+                "context": {}
+            }
 
 def get_ai_agent(db: Session) -> OrderBotAgent:
     """Get initialized AI agent instance"""

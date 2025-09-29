@@ -256,6 +256,49 @@ async def handle_customer_message_unified(customer, event_data, db, current_grou
     # Initialize conversation debugger for real-time monitoring
     debugger = get_conversation_debugger(db)
     
+    # NEW: Action conflict detection to prevent dual processing
+    processing_lock_key = f"processing_{customer.id}_{message[:20]}"
+    processing_timestamp = datetime.utcnow().isoformat()
+    
+    # Check for recent processing attempts (prevent double-processing)
+    recent_session_metadata = session.session_metadata.get("recent_processing", [])
+    
+    # Clean old processing records (older than 30 seconds)
+    current_time = datetime.utcnow()
+    filtered_processing = []
+    for proc in recent_session_metadata:
+        proc_time = datetime.fromisoformat(proc.get("timestamp", "2000-01-01T00:00:00"))
+        if (current_time - proc_time).total_seconds() < 30:
+            filtered_processing.append(proc)
+    
+    # Check for conflicts
+    conflict_detected = False
+    for proc in filtered_processing:
+        if proc.get("message_preview") == message[:20]:
+            logger.warning(f"Detected duplicate processing attempt for customer {customer.id}: {message[:50]}...")
+            conflict_detected = True
+            break
+    
+    if conflict_detected:
+        logger.warning(f"⚠️ Skipping duplicate processing for customer {customer.id}")
+        return
+    
+    # Record this processing attempt
+    processing_record = {
+        "timestamp": processing_timestamp,
+        "message_preview": message[:20],
+        "processing_type": "unified"
+    }
+    filtered_processing.append(processing_record)
+    
+    # Update session metadata with processing history
+    session_metadata = session.session_metadata or {}
+    session_metadata["recent_processing"] = filtered_processing
+    session.session_metadata = session_metadata
+    db.commit()
+    
+    logger.info(f"🔒 Processing locked for customer {customer.id}: {processing_lock_key}")
+    
     try:
         # Try AI processing first if enabled
         if SETTINGS.enable_ai_agent:
@@ -281,6 +324,19 @@ async def handle_customer_message_unified(customer, event_data, db, current_grou
                         context=session.get_context()
                     )
                     
+                    # CRITICAL: Mark AI processing as completed to prevent rule-based conflicts
+                    session_metadata = session.session_metadata or {}
+                    session_metadata["last_ai_processing"] = {
+                        "timestamp": processing_timestamp,
+                        "action": ai_result.get("action"),
+                        "intent": ai_result.get("intent"),
+                        "success": True
+                    }
+                    session.session_metadata = session_metadata
+                    db.commit()
+                    
+                    logger.info(f"✅ AI processing completed successfully for customer {customer.id}: action={ai_result.get('action')}")
+                    
                     # Handle AI agent response within unified flow
                     await handle_ai_agent_response(ai_result, customer, session, db, whatsapp_service, phone_number, group_id)
                     return
@@ -289,6 +345,24 @@ async def handle_customer_message_unified(customer, event_data, db, current_grou
             except Exception as ai_error:
                 logger.error(f"AI processing failed: {ai_error}, falling back to rule-based processing")
                 # Continue to rule-based processing instead of separate fallback system
+        
+        # CRITICAL: Check if AI processing already completed successfully
+        session_metadata = session.session_metadata or {}
+        last_ai_processing = session_metadata.get("last_ai_processing", {})
+        ai_processing_timestamp = last_ai_processing.get("timestamp", "")
+        
+        # If AI processing completed within the last 30 seconds, skip rule-based processing
+        if ai_processing_timestamp:
+            try:
+                ai_time = datetime.fromisoformat(ai_processing_timestamp)
+                time_diff = (datetime.fromisoformat(processing_timestamp) - ai_time).total_seconds()
+                
+                if time_diff < 30 and last_ai_processing.get("success"):
+                    logger.info(f"🚫 Skipping rule-based processing - AI completed successfully {time_diff:.1f}s ago")
+                    return
+            except ValueError:
+                # Invalid timestamp format, continue with rule-based processing
+                pass
         
         # Trace fallback to rule-based processing
         debugger.trace_conversation_step(
@@ -300,6 +374,8 @@ async def handle_customer_message_unified(customer, event_data, db, current_grou
             action="Rule-based processing",
             context=session.get_context()
         )
+        
+        logger.info(f"🔧 Proceeding with rule-based processing for customer {customer.id}")
         
         # Rule-based processing using the same state management system
         await handle_rule_based_processing(customer, event_data, db, current_group_id, whatsapp_service, session)
