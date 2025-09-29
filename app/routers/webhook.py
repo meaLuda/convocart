@@ -397,9 +397,17 @@ async def handle_ai_agent_response(ai_result: Dict[str, Any], customer, session,
         whatsapp_service.send_text_message(phone_number, response)
         
     elif action == "error" or action == "error_handled":
-        # Handle errors gracefully
+        # Handle errors gracefully  
         error_msg = order_data.get("error_message") if order_data else "I'm sorry, I encountered an issue. Please try again or contact support."
         whatsapp_service.send_text_message(phone_number, error_msg)
+        
+    elif action == "quota_exceeded" or action == "service_unavailable":
+        # Handle API quota or service issues with helpful fallback
+        fallback_msg = "I'm experiencing high traffic right now. Let me help you directly:\n\n"
+        fallback_msg += "• Reply with your order details (items, quantities, sizes)\n"
+        fallback_msg += "• Or text 'MENU' to see our options\n"  
+        fallback_msg += "• Or text 'TRACK' to check your orders"
+        whatsapp_service.send_text_message(phone_number, fallback_msg)
         
     else:
         # Unknown action, send default options
@@ -845,7 +853,7 @@ async def send_welcome_message(phone_number, group, whatsapp_service):
     if group.welcome_message:
         welcome_message += f"{group.welcome_message}\n\n"
     
-    welcome_message += "What would you like to do?"
+    welcome_message += "Would you like to place an order with us?\n\n• Yes - I want to place an order\n• No - I want to check my existing orders"
     
     buttons = [
         {"id": "place_order", "title": "Place Order"},
@@ -881,6 +889,10 @@ async def handle_button_click(event_data: dict, db: Session, whatsapp_service) -
         
         # Smart mapping of button payloads to user intents
         payload_mapping = {
+            # Template buttons (hardcoded in Twilio template)
+            "yes": "1",  # Map "Yes" button to option 1 (Place Order)
+            "no": "2",   # Map "No" button to option 2 (Track Order) 
+            
             # Order actions
             "place_order": "place order",
             "new_order": "place order", 

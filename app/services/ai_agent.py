@@ -237,10 +237,17 @@ class OrderBotAgent:
             
             logger.error(f"LLM API call failed: {str(e)}")
             
-            # Return a fallback response
+            # Return a more helpful fallback response based on error type
             class FallbackResponse:
-                content = "I'm currently experiencing high traffic. Please try again in a moment."
-            return FallbackResponse()
+                def __init__(self, content):
+                    self.content = content
+            
+            if "quota" in error_message.lower() or "429" in error_message:
+                fallback_content = "I'm currently at capacity due to high demand. Let me help you with a quick response - what specific items would you like to order? Please provide: item names, quantities, and any size/color preferences."
+            else:
+                fallback_content = "I'm experiencing a temporary issue. Please try again in a moment or contact support if the problem persists."
+                
+            return FallbackResponse(fallback_content)
             
         finally:
             # Log the API call for monitoring
@@ -782,14 +789,22 @@ OUTPUT: Respond with ONLY the intent name from the list above."""
             # Check if message is ambiguous (like "Yes", "No", "OK")
             is_ambiguous = len(message.strip()) <= 3 or message.lower().strip() in ['yes', 'no', 'ok', 'sure', 'fine', 'good']
             
-            # Get customer analytics for personalization
-            customer_profile = self.analytics_service.analyze_customer_behavior(customer.id, update_analytics=False)
+            # Get customer analytics for personalization (with fallback for errors)
+            try:
+                customer_profile = await self.analytics_service.analyze_customer_behavior(customer.id, update_analytics=False)
+            except Exception as e:
+                logger.warning(f"Analytics service error: {e}, using default profile")
+                customer_profile = {'advanced_metrics': {'customer_segment': 'new'}}
             
             # Get business-specific AI personality
-            ai_personality = group.ai_personality if group.ai_personality else self._get_default_personality(business_type)
+            ai_personality = group.ai_personality if group and group.ai_personality else self._get_default_personality(business_type)
             
-            # Get customer recommendations
-            recommendations = self.analytics_service.get_customer_recommendations(customer.id, limit=3)
+            # Get customer recommendations (with fallback for errors)
+            try:
+                recommendations = await self.analytics_service.get_customer_recommendations(customer.id, limit=3)
+            except Exception as e:
+                logger.warning(f"Recommendations service error: {e}, using empty recommendations")
+                recommendations = []
             
             prompt = f"""{ai_personality}
             Customer message: "{message}"
@@ -1393,12 +1408,22 @@ Generate your contextually appropriate response:"""
             }
             
         except Exception as e:
-            logger.error(f"Error processing message with AI agent: {str(e)}")
-            return {
-                "intent": Intent.UNKNOWN,
-                "action": "error",
-                "response": "I encountered an error processing your message. Please try again."
-            }
+            error_message = str(e)
+            logger.error(f"Error processing message with AI agent: {error_message}")
+            
+            # Check for quota/rate limit specific errors
+            if "quota" in error_message.lower() or "429" in error_message:
+                return {
+                    "intent": Intent.UNKNOWN,
+                    "action": "quota_exceeded",
+                    "response": "I'm currently at capacity due to high demand. Please provide your order details directly: item names, quantities, and any size/color preferences."
+                }
+            else:
+                return {
+                    "intent": Intent.UNKNOWN,
+                    "action": "error",
+                    "response": "I encountered an error processing your message. Please try again."
+                }
     
     def _load_conversation_history(self, customer_id: int, limit: int = 10) -> List[Union[HumanMessage, AIMessage]]:
         """Load recent conversation history from session context"""
