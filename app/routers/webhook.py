@@ -261,6 +261,9 @@ async def handle_customer_message_unified(customer, event_data, db, current_grou
     processing_timestamp = datetime.utcnow().isoformat()
     
     # Check for recent processing attempts (prevent double-processing)
+    # Initialize session_metadata if None
+    if session.session_metadata is None:
+        session.session_metadata = {}
     recent_session_metadata = session.session_metadata.get("recent_processing", [])
     
     # Clean old processing records (older than 30 seconds)

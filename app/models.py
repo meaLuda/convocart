@@ -438,6 +438,9 @@ class ConversationSession(Base):
     context_data = Column(
         JsonGettable, nullable=True
     )  # Stores JSON data related to current conversation
+    session_metadata = Column(
+        JsonGettable, nullable=True
+    )  # Stores session metadata for processing tracking and AI sync
     last_interaction = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
     cart_session_id = Column(Integer, ForeignKey("cart_sessions.id"), nullable=True, index=True)

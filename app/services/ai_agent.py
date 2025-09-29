@@ -178,6 +178,9 @@ class StateSynchronizationManager:
             agent_state["conversation_session_id"] = session.id
             
             # Load previous actions to prevent loops
+            # Initialize session_metadata if None
+            if session.session_metadata is None:
+                session.session_metadata = {}
             previous_actions = session.session_metadata.get("previous_actions", [])
             agent_state["previous_actions"] = previous_actions
             
@@ -210,6 +213,9 @@ class StateSynchronizationManager:
             
             # Check for action conflicts
             last_action = agent_state.get("last_action")
+            # Initialize session_metadata if None
+            if session.session_metadata is None:
+                session.session_metadata = {}
             session_last_action = session.session_metadata.get("last_action")
             
             if last_action and session_last_action and last_action != session_last_action:
