@@ -188,6 +188,7 @@
     {% block head %}{% endblock %}
 </head>
 <body class="flex flex-col min-h-screen bg-gray-50">
+    {% if admin %}
     <header class="bg-gray-800 shadow-lg sticky top-0 z-40" x-data="{ mobileMenuOpen: false }">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center py-3">
@@ -323,6 +324,7 @@
         </div>
     </div>
 </header>
+    {% endif %}
     
     <!-- Toast Notification Container -->
     <div id="toast-container" class="toast-container"></div>
